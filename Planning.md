@@ -1,636 +1,190 @@
 # Fitness App — AI Suggestion, Audio, and AI Comment Plan
 
-This README outlines a **rules-first**, offline-friendly implementation with **optional AI add-ons**.  
-Work is split across **Person A (Feature/UI Lead)**, **Person B (Audio/Infra Lead)**, and **Person C (Support/QA/Content)**.
+(Person A = AI/Ranking/metrics, Person B = App/UI & audio, Person C = Support for B: assets/QA/polish)
 
----
+## Phase 0 — Foundations (Day 0)
 
-## Roles
+0.1 Env & wrappers — A
 
-- **Person A — Feature/UI Lead**
-  - R1, R2, R3, R6, R9
-  - A1, A3, A4, A5, A6
-- **Person B — Audio/Infra Lead**
-  - R4, R5
-  - A2
-- **Person C — Support/QA/Content**
-  - Templates, assets, QA, analytics, docs (R2, R3, R4, R5, R6, R7)
+Add .env: OPENAI_API_KEY, ELEVENLABS_API_KEY.
 
----
+Files: ai/openaiClient.ts, audio/ttsClient.ts.
+DoD: Keys loaded; simple “ping” calls succeed.
 
-## Phase R — Rules / Template Based (ship first)
+### 0.2 Consent & Toggles (default ON) — B (C QA)
 
-### R1. Shared State & Signals — **Owner: A** (C: QA)
+One-time consent modal (“AI uses anonymized metrics”).
 
-Single source of truth: `mood`, `time`, `intensity`, `goal`, `planMode ('manual'|'ai')`.  
-Expose computed signals (streak, week sessions, 7/30d totals, stamina deltas).  
-**DoD:** Manual flow unchanged; selectors read/write shared state.
+Settings toggles: Use AI Text, Use Neural Voice (both ON by default).
 
-[State]
-mood=Calm | time=20 | intensity=Low | goal=Recovery
-signals: streak=3, week=2, totalMins7d=85
+Files: screens/SettingsScreen.tsx, utils/prefs.ts.
+DoD: Flags persisted; modal never reappears after accept.
 
----
+## Phase 1 — State & Signals (Rules fallback spine)
 
-### R2. AI Suggestion (Rules) — **Owner: A** (C: copy/templates)
+### 1.1 Plan context & selectors — A
 
-Deterministic planner → Suggestion Card (no LLM).  
-**DoD:** Live updates; [Start] calls existing pipeline; [Edit] opens sheet.
+Store: emotion, goal, timeAvailable, intensityPref, equipment[], constraints, disliked[].
 
-──────────────────────────────────────
-🧘 Today’s Mindful Flow
-──────────────────────────────────────
-Mood: Calm Goal: Recovery
-Time: 20 min Intensity: Low
-──────────────────────────────────────
-
-Yoga Stretch – 10 min
-
-Box Breathing – 10 min
-──────────────────────────────────────
-💡 Why this?
-Low activity yesterday + Calm mood → restore.
-──────────────────────────────────────
-[▶ Start Session] [✏ Edit Plan]
-
-──────────────────────────────────────
-🏋 Power Push Circuit
-──────────────────────────────────────
-Mood: Energized Goal: Strength
-Time: 30 min Intensity: High
-──────────────────────────────────────
-
-Squat Press (12×3)
-
-Push-ups (10×3)
-
-Mountain Climbers (30s×3)
-──────────────────────────────────────
-💡 Why this?
-Physical stamina trending ↑; keep HR on target.
-──────────────────────────────────────
-[▶ Start Session] [✏ Edit Plan]
+Signals: streak, 7dSessions, 7dMinutes, recentIntensityAvg, mentalΔ, physicalΔ.
 
----
+Files: store/usePlanStore.ts, logic/selectors.ts.
+DoD: Existing manual flow unchanged; selectors memoized.
 
-### R3. Edit Plan Sheet — **Owner: A** (C: QA)
+## Phase 2 — Ranking Engine (on-device, deterministic)
 
-Bottom sheet to tweak time/intensity/focus/swap; writes back to shared state.  
-**DoD:** Save updates card; Cancel reverts.
+### 2.1 Exercise templates — A (C copy help)
 
-──────── Edit Plan ────────
-Time: 20m 25m 30m
-Inten: Low Med High
-Focus: Mobility Strength Cardio
-Swap: [Yoga Stretch] → [Cat-Cow]
-[Breathing] → [Body Scan]
-───────────────────────────
-[Save] [Cancel]
+JSON templates with tags: focus, intensity, equipment, recoveryFit.
 
----
+File: data/exerciseTemplates.json.
+DoD: At least 12 templates (mobility, core, cardio, strength, mindfulness).
 
-### R4. Healing Music (bundled, no AI) — **Owner: B** (C: assets/manifest)
+## 2.2 Scoring & plan builder — A
 
-Multi-select loop-safe tracks (Mental/Mindfulness only) with shuffle/loop.  
-**DoD:** Select ≥2; persisted in prefs.
+rankExercises(ctx) → Ranked[] (weights per your spec).
 
-──────────────────────────────────────
-🎵 Healing Music (Select)
-──────────────────────────────────────
-[✓] Ocean Calm (loop)
-[ ] Soft Piano Night (loop)
-[✓] Forest Air (loop)
-[ ] Binaural Lite (loop)
-──────────────────────────────────────
-Selected: Ocean Calm, Forest Air (shuffle)
-[Save]
+buildPlan(ranked) → {blocks, totalTime, why[]}.
 
----
-
-### R5. Audio Engine & Voice Scripts (templated) — **Owner: B** (C: QA)
-
-Two players (`voice`, `bgm`) via expo-av; **ducking −12 dB**, **crossfade 2.0s**; device TTS; concise scripts.  
-**DoD:** Start/Pause/Resume/Finish stable; no leaks; smoother, less robotic.
-
-──────────────────────────────────────
-🔊 Audio Settings (Local)
-──────────────────────────────────────
-Voice: Mindful Guide (device)
-Duck: On (12 dB)
-Fade: 2.0 s
-Preview: [▶ Test]
-──────────────────────────────────────
+File: logic/rankExercises.ts.
+DoD: Deterministic output; respects constraints/disliked; “why” reasons present.
 
----
+## 2.3 Suggestion Card UI — B (C QA)
 
-### R6. AI Comment (Rules) — **Owner: A** (C: template lines)
+Shows top plan (title, blocks, total time, Why this?).
 
-Classify: `consistency | boost | gentle | recovery` → show contextual card + CTAs.  
-**DoD:** Correct variant; CTAs prefill next plan.
+Buttons: [Start] [Edit] [Refresh].
 
-──────────────────────────────────────
-🎯 Consistency Win
-──────────────────────────────────────
-Streak: 5 days This week: 4 sessions
-Total mins: 132 Avg intensity: Medium
-Trend: ▂▆▇▅▇
-──────────────────────────────────────
-“You’re building a solid base—keep it up.”
-──────────────────────────────────────
-[Plan 15-min Recovery] [Share Win]
+Files: components/SuggestionCard.tsx, components/EditPlanSheet.tsx.
+DoD: Live updates on input change; edit sheet writes back to store.
 
-──────────────────────────────────────
-⚡ Stamina Boost
-──────────────────────────────────────
-Mental: 62 → 68 (↑ +6)
-Physical: 54 → 61 (↑ +7)
-──────────────────────────────────────
-“Nice lift—physical stamina reached 61.”
-──────────────────────────────────────
-[Lock 25-min Strength] [View Stats]
+## Phase 3 — AI Suggestion (default ON, cached)
 
----
+### 3.1 OpenAI rewrite — A
 
-### R7. Settings / Privacy / Analytics — **Owner: C** (A/B review)
+generateSuggestionText(plan, ctx) (energetic coach, 2–4 sentences).
 
-Toggles (off by default): **Neural Voice**, **AI Paraphrase**.  
-Analytics events: `plan_viewed`, `plan_started`, `audio_mode_changed`, `comment_shown`, `cta_clicked`.  
-**DoD:** Offline-first; events fire once; toggles persisted.
+Cache key: sha1(date + planHash + ctxHash) in AsyncStorage/FileSystem.
 
-⚙️ Preferences
-──────────────────────────────────────
-( ) Use Neural Voice (online)
-( ) AI Paraphrase (captions/comments)
-[ Privacy: Offline-first | Minimal data ]
-──────────────────────────────────────
+Files: ai/suggestion.ts, utils/cache.ts.
+DoD: First call <3s; subsequent <300ms; automatic rules-text fallback on error.
 
----
+## 3.2 UI integration — B (C QA)
 
-## Phase AI — Integrated (opt-in, safe fallbacks)
+Suggestion Card displays AI text when available; shows fallback if not.
 
-### A1. Paraphrase Service (captions/comments only) — **Owner: A** (C: prompts)
+[Refresh] invalidates cache only if inputs changed.
+DoD: No duplicate calls; budget log visible in dev.
 
-Tiny LLM rewrite (tone: **Hype/Warm/Mindful**); cache by `(planHash, tone)`.  
-**DoD:** ≤60 tokens; <800ms typical; offline → template fallback.
+## Phase 4 — Audio: Neural TTS + Healing Music (with fallback)
 
-Input facts → “Warm” paraphrase
-“Today we restore mobility—you’ll feel lighter.”
-[Cache ✓] [Fallback if offline ✓]
+### 4.1 ElevenLabs TTS (energetic coach) — A
 
----
+synthesize(script, voiceId) → mp3, cache by (voiceId+hash(script)).
 
-### A2. Neural TTS (optional) — **Owner: B** (C: QA)
+File: audio/TTSService.ts.
+DoD: Works offline via cache; fallback to device TTS if network/API fails.
 
-Online neural voices; cache audio per line; fallback to device TTS.  
-**DoD:** Noticeably more natural; no break offline.
+### 4.2 Mixer & ducking — B (C QA/assets)
 
-──────────────────────────────────────
-🗣️ Voice Quality
-──────────────────────────────────────
-(•) Device Voice (offline)
-( ) Neural Voice (online, cached)
-Tip: Neural sounds more natural.
-────────────────────────────────────
+Expo AV: Track A (healing music, loop/shuffle, multi-select), Track B (voice).
 
----
+Auto-duck A to ~20% during voice; restore after.
 
-### A3. Weekly Recap (light LLM) — **Owner: A** (C: review)
+Files: audio/AudioEngine.ts, hooks/useAudioEngine.ts, components/HealingMusicPicker.tsx, assets /assets/healing/\*.
+DoD: Seamless loop; no leaks on pause/resume; picker persists selection.
 
-100–150-word recap + 3 bullets; cached; offline → rule template.  
-**DoD:** Stable tone; token-capped; quick render.
+## Phase 5 — AI Comment (Daily Summary, cached, fallback)
 
-──────────────────────────────────────
-📅 Weekly Recap
-──────────────────────────────────────
-This week you trained 4 times (132 min).
-Strength days were consistent; recovery
-was light—consider one longer unwind.
-• Improve: add 5–10 min mindfulness
-• Watch: back-to-back HIIT
-• Next: 30-min strength + 15-min unwind
-──────────────────────────────────────
-[Schedule Next Week]
+### 5.1 Metrics & scheduler — A
 
----
+Compute features post-log & nightly (21:00 local or next app open).
 
-### A4. Adaptive Nudge (bounded adjust) — **Owner: A** (B: audio cue hook)
+Persist daily_summaries {date, text, metrics} (Supabase).
 
-After the rule plan, AI may suggest a small edit (±5–10m, swap within category).  
-Rules validate or ignore; never blocks start.  
-**DoD:** Logged `nudge_applied`.
+Files: logic/summaryMetrics.ts, features/dailySummary/storage.ts.
+DoD: Exactly one summary/day; idempotent.
 
-Nudge: “Reduce today by 5 min (sleep low)”
-[Apply] [Ignore] (rules-validated)
+## 5.2 Heuristic bucket → AI polish — A
 
----
+Buckets: Consistency / Comeback / PR / Encouragement.
 
-### A5. Natural Language Intents (small scope) — **Owner: A** (C: fallback chips)
+generateDailySummary(ctx) → text (OpenAI → cache by date).
 
-Parse “Plan a 20-min unwind tonight” → map to filters.  
-Low confidence → show chips.  
-**DoD:** Zero dead ends.
+File: ai/dailySummary.ts.
+DoD: Uses metrics naturally; rules fallback on failure.
 
-Plan a 20-min unwind”
-→ Mood: Calm | Time: 20 | Focus: Mobility
-[Start] [Edit]
+### 5.3 UI — B (C QA)
 
----
+“Coach Note” card on Home; history list view.
 
-### A6. “Why this?” Explainer (LLM polish) — **Owner: A** (C: prompts)
+Files: features/dailySummary/CoachNote.tsx, features/dailySummary/History.tsx.
+DoD: Shows latest + past 14 days; no duplicates.
 
-Turn signals into a transparent one-liner; cache; offline → template.  
-**DoD:** Human, concise, never blocking.
+## Phase 6 — Settings, Privacy, Budget & Reliability
 
-💡 Why this?
-“Calm mood + two HIIT days → restore mobility today.”
+### 6.1 Settings completion — B
 
----
+Toggles: AI Text / Neural Voice; Voice picker; Music multi-select; Disliked exercises; Equipment.
 
-## Task Matrix (Owner → Deliverables)
+Default: toggles ON.
+DoD: All prefs persist; instant effect.
 
-| Task                          | Owner           | Key Deliverables                                                          |
-| ----------------------------- | --------------- | ------------------------------------------------------------------------- |
-| R1 Shared State & Signals     | A               | `useWorkoutPlanStore.ts` / context, computed selectors                    |
-| R2 AI Suggestion (Rules)      | A (C templates) | `components/SuggestionCard.tsx`, templates JSON                           |
-| R3 Edit Plan Sheet            | A (C QA)        | `components/EditPlanSheet.tsx`                                            |
-| R4 Healing Music              | B (C assets)    | `components/HealingMusicPicker.tsx`, `/assets/healing/*`, `manifest.json` |
-| R5 Audio Engine & Scripts     | B (C QA)        | `audio/AudioEngine.ts`, `useAudioEngine.ts`, device TTS scripts           |
-| R6 AI Comment (Rules)         | A (C templates) | `logic/commentRules.ts`, `components/AICommentCard.tsx`                   |
-| R7 Settings/Privacy/Analytics | C (A/B review)  | `utils/analytics.ts`, toggles UI, docs                                    |
-| A1 Paraphrase Service         | A (C prompts)   | `ai/paraphrase.ts`, cache                                                 |
-| A2 Neural TTS                 | B (C QA)        | `audio/TTSService.ts`, cache, toggle UI                                   |
-| A3 Weekly Recap               | A (C review)    | `features/recap/WeeklyRecap.tsx`                                          |
-| A4 Adaptive Nudge             | A (B hook)      | `logic/nudgeRules.ts`, UI apply/ignore                                    |
-| A5 NL Intents                 | A (C chips)     | `ai/intent.ts`, fallback chips                                            |
-| A6 “Why this?” (LLM)          | A (C prompts)   | `ai/whyThis.ts`                                                           |
+### 6.2 Budget guardrails — A (C QA)
 
----
+Rate limits: 1 suggestion/day, 1 summary/day (manual override for dev).
 
-## Branch & PR Guidelines
+Token meter in dev builds; exponential backoff; circuit breaker on repeated failures.
 
-- Branches:  
-  `feat/ui-suggestion-A`, `feat/edit-sheet-A`, `feat/audio-engine-B`, `feat/tts-service-B`,  
-  `feat/ai-comment-A`, `support/assets-C`, `support/analytics-C`
-- PR checklist:
-  - No regression in manual flow
-  - Offline OK (device TTS)
-  - 60fps during playback; no audio leaks
-  - Analytics events correct (once per action)
-  - Screenshots/GIF + DoD ticked
+Files: utils/rateLimit.ts, utils/retry.ts.
+DoD: Stays under <$3/mo with typical use.
 
----
+## 6.3 Privacy note — B
 
-## Privacy & Defaults
+Inline note under toggles: “Sends anonymized aggregates only.”
+DoD: Copy approved.
 
-- **Offline-first** by default (no AI required).
-- AI toggles are **opt-in**.
-- Only minimal aggregates are sent to AI (counts/averages/streak), never raw personal logs.
+Phase 7 — QA & Release
 
----
+## 7.1 iOS end-to-end — B (C QA)
 
-# Fitness App — AI Suggestion, Audio, and AI Comment Plan
+Flow: Inputs → Suggestion (AI) → Audio guidance (voice+music) → Log → Next day summary.
+DoD: Smooth playback; correct ducking; no crashes.
 
-This README outlines a **rules-first**, offline-friendly implementation with **optional AI add-ons**.  
-Work is split across **Person A (Feature/UI Lead)**, **Person B (Audio/Infra Lead)**, and **Person C (Support/QA/Content)**.
+### 7.2 Web checks — B (C QA)
 
----
+Text features OK; document web-audio constraints.
+DoD: No blocking errors; graceful degradation.
 
-## Roles
+### 7.3 Performance & accessibility — A/B/C
 
-- **Person A — Feature/UI Lead**
-  - R1, R2, R3, R6, R9
-  - A1, A3, A4, A5, A6
-- **Person B — Audio/Infra Lead**
-  - R4, R5
-  - A2
-- **Person C — Support/QA/Content**
-  - Templates, assets, QA, analytics, docs (R2, R3, R4, R5, R6, R7)
+Cold AI <3s; cached <300ms; 60fps during audio UI; VoiceOver labels for controls.
+DoD: All acceptance checks pass.
 
----
+## Task matrix (Owner → Key Deliverables)
 
-## Phase R — Rules / Template Based (ship first)
+A: usePlanStore.ts, data/exerciseTemplates.json, logic/rankExercises.ts, ai/suggestion.ts, ai/dailySummary.ts, audio/TTSService.ts, logic/summaryMetrics.ts, utils/{cache,rateLimit,retry}.ts.
 
-### R1. Shared State & Signals — **Owner: A** (C: QA)
+B: components/SuggestionCard.tsx, components/EditPlanSheet.tsx, audio/AudioEngine.ts, hooks/useAudioEngine.ts, components/HealingMusicPicker.tsx, features/dailySummary/{CoachNote,History}.tsx, screens/SettingsScreen.tsx, consent modal.
 
-Single source of truth: `mood`, `time`, `intensity`, `goal`, `planMode ('manual'|'ai')`.  
-Expose computed signals (streak, week sessions, 7/30d totals, stamina deltas).  
-**DoD:** Manual flow unchanged; selectors read/write shared state.
+C (supports B): Healing tracks (normalized, loop-safe), copy polish, QA scripts, accessibility review, test plans.
 
-[State]
-mood=Calm | time=20 | intensity=Low | goal=Recovery
-signals: streak=3, week=2, totalMins7d=85
+## Branching (suggested)
 
-yaml
-コピーする
-編集する
+feat/ranking-A, feat/ai-suggestion-A, feat/tts-engine-A, feat/audio-engine-B, feat/music-picker-B, feat/daily-summary-A, feat/settings-consent-B, support/assets-healing-C, support/qa-tests-C.
 
----
+## Acceptance checklist (condensed)
 
-### R2. AI Suggestion (Rules) — **Owner: A** (C: copy/templates)
+Ranking plan respects preferences/constraints and shows “Why this?”.
 
-Deterministic planner → Suggestion Card (no LLM).  
-**DoD:** Live updates; [Start] calls existing pipeline; [Edit] opens sheet.
+AI suggestion shows energetic coaching text; cached; rules fallback works.
 
-──────────────────────────────────────
-🧘 Today’s Mindful Flow
-──────────────────────────────────────
-Mood: Calm Goal: Recovery
-Time: 20 min Intensity: Low
-──────────────────────────────────────
+ElevenLabs voice + healing music with ducking and cache; device TTS fallback OK.
 
-Yoga Stretch – 10 min
+One daily AI summary stored & displayed; fallback text OK.
 
-Box Breathing – 10 min
-──────────────────────────────────────
-💡 Why this?
-Low activity yesterday + Calm mood → restore.
-──────────────────────────────────────
-[▶ Start Session] [✏ Edit Plan]
+Toggles default ON; user can opt out; consent recorded.
 
-コピーする
-編集する
-──────────────────────────────────────
-🏋 Power Push Circuit
-──────────────────────────────────────
-Mood: Energized Goal: Strength
-Time: 30 min Intensity: High
-──────────────────────────────────────
+Budget within cap; retries/backoff/circuit breaker implemented.
 
-Squat Press (12×3)
-
-Push-ups (10×3)
-
-Mountain Climbers (30s×3)
-──────────────────────────────────────
-💡 Why this?
-Physical stamina trending ↑; keep HR on target.
-──────────────────────────────────────
-[▶ Start Session] [✏ Edit Plan]
-
-yaml
-コピーする
-編集する
-
----
-
-### R3. Edit Plan Sheet — **Owner: A** (C: QA)
-
-Bottom sheet to tweak time/intensity/focus/swap; writes back to shared state.  
-**DoD:** Save updates card; Cancel reverts.
-
-──────── Edit Plan ────────
-Time: 20m 25m 30m
-Inten: Low Med High
-Focus: Mobility Strength Cardio
-Swap: [Yoga Stretch] → [Cat-Cow]
-[Breathing] → [Body Scan]
-───────────────────────────
-[Save] [Cancel]
-
-yaml
-コピーする
-編集する
-
----
-
-### R4. Healing Music (bundled, no AI) — **Owner: B** (C: assets/manifest)
-
-Multi-select loop-safe tracks (Mental/Mindfulness only) with shuffle/loop.  
-**DoD:** Select ≥2; persisted in prefs.
-
-──────────────────────────────────────
-🎵 Healing Music (Select)
-──────────────────────────────────────
-[✓] Ocean Calm (loop)
-[ ] Soft Piano Night (loop)
-[✓] Forest Air (loop)
-[ ] Binaural Lite (loop)
-──────────────────────────────────────
-Selected: Ocean Calm, Forest Air (shuffle)
-[Save]
-
-yaml
-コピーする
-編集する
-
----
-
-### R5. Audio Engine & Voice Scripts (templated) — **Owner: B** (C: QA)
-
-Two players (`voice`, `bgm`) via expo-av; **ducking −12 dB**, **crossfade 2.0s**; device TTS; concise scripts.  
-**DoD:** Start/Pause/Resume/Finish stable; no leaks; smoother, less robotic.
-
-──────────────────────────────────────
-🔊 Audio Settings (Local)
-──────────────────────────────────────
-Voice: Mindful Guide (device)
-Duck: On (12 dB)
-Fade: 2.0 s
-Preview: [▶ Test]
-──────────────────────────────────────
-
-yaml
-コピーする
-編集する
-
----
-
-### R6. AI Comment (Rules) — **Owner: A** (C: template lines)
-
-Classify: `consistency | boost | gentle | recovery` → show contextual card + CTAs.  
-**DoD:** Correct variant; CTAs prefill next plan.
-
-──────────────────────────────────────
-🎯 Consistency Win
-──────────────────────────────────────
-Streak: 5 days This week: 4 sessions
-Total mins: 132 Avg intensity: Medium
-Trend: ▂▆▇▅▇
-──────────────────────────────────────
-“You’re building a solid base—keep it up.”
-──────────────────────────────────────
-[Plan 15-min Recovery] [Share Win]
-
-コピーする
-編集する
-──────────────────────────────────────
-⚡ Stamina Boost
-──────────────────────────────────────
-Mental: 62 → 68 (↑ +6)
-Physical: 54 → 61 (↑ +7)
-──────────────────────────────────────
-“Nice lift—physical stamina reached 61.”
-──────────────────────────────────────
-[Lock 25-min Strength] [View Stats]
-
-yaml
-コピーする
-編集する
-
----
-
-### R7. Settings / Privacy / Analytics — **Owner: C** (A/B review)
-
-Toggles (off by default): **Neural Voice**, **AI Paraphrase**.  
-Analytics events: `plan_viewed`, `plan_started`, `audio_mode_changed`, `comment_shown`, `cta_clicked`.  
-**DoD:** Offline-first; events fire once; toggles persisted.
-
-──────────────────────────────────────
-⚙️ Preferences
-──────────────────────────────────────
-( ) Use Neural Voice (online)
-( ) AI Paraphrase (captions/comments)
-[ Privacy: Offline-first | Minimal data ]
-──────────────────────────────────────
-
-yaml
-コピーする
-編集する
-
----
-
-## Phase AI — Integrated (opt-in, safe fallbacks)
-
-### A1. Paraphrase Service (captions/comments only) — **Owner: A** (C: prompts)
-
-Tiny LLM rewrite (tone: **Hype/Warm/Mindful**); cache by `(planHash, tone)`.  
-**DoD:** ≤60 tokens; <800ms typical; offline → template fallback.
-
-Input facts → “Warm” paraphrase
-“Today we restore mobility—you’ll feel lighter.”
-[Cache ✓] [Fallback if offline ✓]
-
-yaml
-コピーする
-編集する
-
----
-
-### A2. Neural TTS (optional) — **Owner: B** (C: QA)
-
-Online neural voices; cache audio per line; fallback to device TTS.  
-**DoD:** Noticeably more natural; no break offline.
-
-──────────────────────────────────────
-🗣️ Voice Quality
-──────────────────────────────────────
-(•) Device Voice (offline)
-( ) Neural Voice (online, cached)
-Tip: Neural sounds more natural.
-──────────────────────────────────────
-
-yaml
-コピーする
-編集する
-
----
-
-### A3. Weekly Recap (light LLM) — **Owner: A** (C: review)
-
-100–150-word recap + 3 bullets; cached; offline → rule template.  
-**DoD:** Stable tone; token-capped; quick render.
-
-──────────────────────────────────────
-📅 Weekly Recap
-──────────────────────────────────────
-This week you trained 4 times (132 min).
-Strength days were consistent; recovery
-was light—consider one longer unwind.
-• Improve: add 5–10 min mindfulness
-• Watch: back-to-back HIIT
-• Next: 30-min strength + 15-min unwind
-──────────────────────────────────────
-[Schedule Next Week]
-
-yaml
-コピーする
-編集する
-
----
-
-### A4. Adaptive Nudge (bounded adjust) — **Owner: A** (B: audio cue hook)
-
-After the rule plan, AI may suggest a small edit (±5–10m, swap within category).  
-Rules validate or ignore; never blocks start.  
-**DoD:** Logged `nudge_applied`.
-
-Nudge: “Reduce today by 5 min (sleep low)”
-[Apply] [Ignore] (rules-validated)
-
-yaml
-コピーする
-編集する
-
----
-
-### A5. Natural Language Intents (small scope) — **Owner: A** (C: fallback chips)
-
-Parse “Plan a 20-min unwind tonight” → map to filters.  
-Low confidence → show chips.  
-**DoD:** Zero dead ends.
-
-“Plan a 20-min unwind”
-→ Mood: Calm | Time: 20 | Focus: Mobility
-[Start] [Edit]
-
-yaml
-コピーする
-編集する
-
----
-
-### A6. “Why this?” Explainer (LLM polish) — **Owner: A** (C: prompts)
-
-Turn signals into a transparent one-liner; cache; offline → template.  
-**DoD:** Human, concise, never blocking.
-
-💡 Why this?
-“Calm mood + two HIIT days → restore mobility today.”
-
-yaml
-コピーする
-編集する
-
----
-
-## Task Matrix (Owner → Deliverables)
-
-| Task                          | Owner           | Key Deliverables                                                          |
-| ----------------------------- | --------------- | ------------------------------------------------------------------------- |
-| R1 Shared State & Signals     | A               | `useWorkoutPlanStore.ts` / context, computed selectors                    |
-| R2 AI Suggestion (Rules)      | A (C templates) | `components/SuggestionCard.tsx`, templates JSON                           |
-| R3 Edit Plan Sheet            | A (C QA)        | `components/EditPlanSheet.tsx`                                            |
-| R4 Healing Music              | B (C assets)    | `components/HealingMusicPicker.tsx`, `/assets/healing/*`, `manifest.json` |
-| R5 Audio Engine & Scripts     | B (C QA)        | `audio/AudioEngine.ts`, `useAudioEngine.ts`, device TTS scripts           |
-| R6 AI Comment (Rules)         | A (C templates) | `logic/commentRules.ts`, `components/AICommentCard.tsx`                   |
-| R7 Settings/Privacy/Analytics | C (A/B review)  | `utils/analytics.ts`, toggles UI, docs                                    |
-| A1 Paraphrase Service         | A (C prompts)   | `ai/paraphrase.ts`, cache                                                 |
-| A2 Neural TTS                 | B (C QA)        | `audio/TTSService.ts`, cache, toggle UI                                   |
-| A3 Weekly Recap               | A (C review)    | `features/recap/WeeklyRecap.tsx`                                          |
-| A4 Adaptive Nudge             | A (B hook)      | `logic/nudgeRules.ts`, UI apply/ignore                                    |
-| A5 NL Intents                 | A (C chips)     | `ai/intent.ts`, fallback chips                                            |
-| A6 “Why this?” (LLM)          | A (C prompts)   | `ai/whyThis.ts`                                                           |
-
----
-
-## Branch & PR Guidelines
-
-- Branches:  
-  `feat/ui-suggestion-A`, `feat/edit-sheet-A`, `feat/audio-engine-B`, `feat/tts-service-B`,  
-  `feat/ai-comment-A`, `support/assets-C`, `support/analytics-C`
-- PR checklist:
-  - No regression in manual flow
-  - Offline OK (device TTS)
-  - 60fps during playback; no audio leaks
-  - Analytics events correct (once per action)
-  - Screenshots/GIF + DoD ticked
-
----
-
-## Privacy & Defaults
-
-- **Offline-first** by default (no AI required).
-- AI toggles are **opt-in**.
-- Only minimal aggregates are sent to AI (counts/averages/streak), never raw personal logs.
-
----
+iOS passes E2E; Web degrades gracefully; no regressions.
