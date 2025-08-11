@@ -163,7 +163,7 @@ const denormalizeSession = (s: WorkoutSession) => {
     physicalstaminagained: s.physicalStaminaGained ?? 0,
     startemotion: s.startEmotion ?? '',
     startphysicalpurpose: s.startPhysicalPurpose ?? null,
-    selectedtime: Math.round(s.selectedTime ?? 0), // intで送る
+    selectedtime: Math.round(s.selectedTime ?? 0),
   };
   return payload;
 };
@@ -247,17 +247,17 @@ export const getMoodLogs = async (): Promise<MoodLog[]> => {
     return normalized;
   } catch (e) {
     console.error('getMoodLogs error:', e);
-    const json = await AsyncStorage.getItem(STORAGE_KEYS_MOOD_LOGS);
+    const json = await AsyncStorage.getItem(STORAGE_KEYS.MOOD_LOGS);
     return json ? (JSON.parse(json) as MoodLog[]) : [];
   }
 };
 
 export const saveMoodLog = async (log: MoodLog): Promise<void> => {
   try {
-    const user_id = (await resolveUserId()) ?? undefined;
+    const user_id = log.user_id ?? (await resolveUserId());
     if (!user_id) throw new Error('no user id');
 
-    const payload = denormalizeMood({ ...log, user_id } as MoodLog);
+    const payload = denormalizeMood({ ...log, user_id });
     const { error } = await supabase.from('mood_logs').upsert(payload, { onConflict: 'id' });
     if (error) throw error;
 
@@ -269,7 +269,7 @@ export const saveMoodLog = async (log: MoodLog): Promise<void> => {
     try {
       const cached = await getMoodLogs();
       upsertById(cached, log);
-      await AsyncStorage.setItem(STORAGE_KEYS_MOOD_LOGS, JSON.stringify(cached));
+      await AsyncStorage.setItem(STORAGE_KEYS.MOOD_LOGS, JSON.stringify(cached));
     } catch {}
   }
 };
