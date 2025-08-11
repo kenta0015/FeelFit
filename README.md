@@ -217,3 +217,47 @@ This project is licensed under the MIT License.
 ## Support
 
 For questions or issues, please open an issue in the repository or contact the development team.
+
+## Dev-only Test Tab Toggle
+
+**What:** The `workout(test)` tab is hidden by default. It’s controlled by the env var `EXPO_PUBLIC_SHOW_TEST_TAB`.
+
+Normally, run npx expo start -c.
+
+Only when you need the test tab, start with EXPO_PUBLIC_SHOW_TEST_TAB=1 (e.g., PowerShell: $env:EXPO_PUBLIC_SHOW_TEST_TAB=1; npx expo start -c).
+
+- **Default:** OFF (hidden). If the variable is missing or `0/false`, the tab will not show.
+- **Quick ON for a single dev session:**
+
+  - **Windows (PowerShell):**
+    ```powershell
+    $env:EXPO_PUBLIC_SHOW_TEST_TAB=1; npx expo start -c
+    ```
+  - **Windows (cmd.exe):**
+    ```bat
+    set EXPO_PUBLIC_SHOW_TEST_TAB=1 && npx expo start -c
+    ```
+  - **macOS/Linux:**
+    ```bash
+    EXPO_PUBLIC_SHOW_TEST_TAB=1 npx expo start -c
+    ```
+    Closing the terminal turns it OFF again.
+
+- **Verify:** In the console, `console.log(process.env.EXPO_PUBLIC_SHOW_TEST_TAB)` → `"1"` or `"true"` when ON.
+
+- **Optional (persistent during local dev):**  
+  Add an NPM script:
+  ```json
+  {
+    "scripts": {
+      "dev:test": "EXPO_PUBLIC_SHOW_TEST_TAB=1 expo start -c"
+    }
+  }
+  ```
+
+## CI/EAS builds:
+
+Keep production with no EXPO_PUBLIC_SHOW_TEST_TAB (stays OFF).
+If you have a preview profile, set EXPO_PUBLIC_SHOW_TEST_TAB=1 there only.
+
+Note: EXPO*PUBLIC* vars are safe to expose to the client; do not put secrets in them.
