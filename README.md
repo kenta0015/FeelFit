@@ -2,54 +2,42 @@
 
 A React Native (Expo) app that proposes the best workout for your time window and focus (Mental / Physical / Both), grounded in MET intensity and enhanced by AI coaching. It builds mental & physical stamina with science-flavored guidance that stays lightweight for everyday users.
 
-## Highlights (What’s new in this plan)
+## Features
 
-AI Suggestion (default ON, cached): energetic coaching text in 2–4 sentences, with a one-line “Why this?” reason.
+### 🧠 Mental Wellness
 
-Ranking engine (on-device): MET × time × completion, plus Training Monotony & Strain (MET-based), variety/progression, constraints, dislikes.
-
-Zero-input signals: no devices needed. Uses your recent sessions to avoid monotony and overdoing.
-
-“Two-Choice” quick adjust (only on uncertain days): Go harder / Keep it light (auto-dismiss in 3s) to fine-tune today’s plan.
-
-Audio upgrade: ElevenLabs neural TTS with cache, healing music picker, auto-ducking, BPM step sync (90/110/130/150).
-
-Conversational micro-commands: Push-to-Talk → Pause/Resume/Skip/How long left?/Slower/Faster (sub-300ms with cached replies).
-
-Daily AI Comment: once per day summary card with streak/minutes/trends; cached, with rule fallback.
-
-Budget & privacy: rate-limited, cached; sends only minimal aggregates to AI; offline fallbacks everywhere.
-
-Features
-🧠 Mental Wellness
 Emotion-based matching for mindfulness, breathing, soothing mobility.
 
 Mental stamina accrues from low-impact focus work.
 
 Healing audio with calming voice + optional background tracks.
 
-💪 Physical Fitness
+### 💪 Physical Fitness
+
 Goal-oriented plans (metabolism, weight loss, toning, stamina, fitness, immune).
 
 MET-grounded intensity; progression when appropriate.
 
 Motivational coaching with energetic neural voice.
 
-⚖️ Balanced Sessions
+### ⚖️ Balanced Sessions
+
 Combine mental & physical benefits in one plan.
 
 Dual stamina gains; adaptive audio per block.
 
 Clear “Why this?” line referencing monotony/strain or recovery intent.
 
-📊 Progress & Insight
+### 📊 Progress & Insight
+
 Totals, minutes, completion, streaks.
 
 Monotony (7-day) & Strain (7-day) indicators (MET-based) to avoid sameness/overload.
 
 Daily Coach Note history (14 days).
 
-🗣️ Audio & Interaction
+### 🗣️ Audio & Interaction
+
 Neural TTS (ElevenLabs) with local cache; device TTS fallback.
 
 Healing Music Picker (multi-select loops), auto-ducking during voice.
@@ -58,7 +46,26 @@ BPM Step Sync: swaps among curated BPM tracks by exercise intensity.
 
 Micro-commands during workouts via Push-to-Talk.
 
-Technology Stack
+## Highlights (What’s new in this plan)
+
+**AI Suggestion (default ON, cached)**: energetic coaching text in 2–4 sentences, with a one-line “Why this?” reason.
+
+**Ranking engine (on-device)**: MET × time × completion, plus Training Monotony & Strain (MET-based), variety/progression, constraints, dislikes.
+
+**Zero-input signals**: no devices needed. Uses your recent sessions to avoid monotony and overdoing.
+
+**“Two-Choice” quick adjust (only on uncertain days)**: Go harder / Keep it light (auto-dismiss in 3s) to fine-tune today’s plan.
+
+**Audio upgrade**: ElevenLabs neural TTS with cache, healing music picker, auto-ducking, BPM step sync (90/110/130/150).
+
+**Conversational micro-commands**: Push-to-Talk → Pause/Resume/Skip/How long left?/Slower/Faster (sub-300ms with cached replies).
+
+**Daily AI Comment**: once per day summary card with streak/minutes/trends; cached, with rule fallback.
+
+**Budget & privacy**: rate-limited, cached; sends only minimal aggregates to AI; offline fallbacks everywhere.
+
+## Technology Stack
+
 Frontend: React Native with Expo SDK 52
 
 Navigation: Expo Router (tab architecture)
@@ -77,8 +84,10 @@ Icons: lucide-react-native
 
 Styling: React Native StyleSheet
 
-Getting Started
-Prerequisites
+## Getting Started
+
+### Prerequisites
+
 Node.js 18+
 
 npm or yarn
@@ -89,36 +98,39 @@ Supabase project (URL + anon key)
 
 OpenAI & ElevenLabs API keys (for AI text & neural voice)
 
-Installation
-Install dependencies
+## Installation
+
+### 1.Install dependencies
 
 bash
-コピーする
-編集する
+
 npm install
-Environment variables
+
+### 2.Environment variables
+
 Create .env and set:
 
 ini
-コピーする
-編集する
+
 EXPO_PUBLIC_SUPABASE_URL=your_supabase_url
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 OPENAI_API_KEY=your_openai_key
 ELEVENLABS_API_KEY=your_elevenlabs_key
-Start development
+
+### 3.Start development
 
 bash
-コピーする
-編集する
+
 npm run dev
-Notes
+
+### Notes
 
 AI text is cached & rate-limited (1 suggestion/day, 1 summary/day).
 
 If keys are missing or offline → rule-based text + device TTS fallback.
 
-Database Setup
+### Database Setup
+
 Tables are created/seeded by the app or migrations:
 
 users — User profile & stamina
@@ -131,11 +143,10 @@ daily_summaries — One per day: text + metrics snapshot
 
 All tables use Row Level Security (RLS).
 
-App Architecture
-Navigation
-bash
-コピーする
-編集する
+## App Architecture
+
+### Navigation
+
 app/
 ├─ \_layout.tsx
 └─ (tabs)/
@@ -145,9 +156,7 @@ app/
 ├─ stamina.tsx # Mental/Physical levels & badges
 └─ profile.tsx # Settings & consent
 Components (excerpt)
-bash
-コピーする
-編集する
+
 components/
 ├─ SuggestionCard.tsx # Plan + “Why this?”
 ├─ EditPlanSheet.tsx # Tweak time/intensity/focus
@@ -155,7 +164,9 @@ components/
 ├─ HealingMusicPicker.tsx # Multi-select background tracks
 ├─ PTTButton.tsx # Push-to-Talk for commands
 └─ WorkoutTimer.tsx # Timer + audio engine hooks
-Data Flow
+
+## Data Flow
+
 User selects focus (Mental/Physical/Both) & time window
 
 Engine ranks with MET + Monotony/Strain + Variety/Progression + constraints
@@ -168,7 +179,8 @@ Session saved → stamina & metrics update
 
 Nightly (or next open): Daily Coach Note generated (cached)
 
-Workout Matching & Science
+## Workout Matching & Science
+
 MET-based intensity per exercise block (time-compatible).
 
 Training Monotony (7d): mean(load)/std(load) from daily MET-minutes × completion.
@@ -183,28 +195,30 @@ Two-Choice Quick Adjust: on uncertain days only → Go harder or Keep it light �
 
 Why this? surfaces one factual reason (e.g., “Monotony trending high → adding mobility & mindfulness today”).
 
-Stamina System
-Mental Stamina
+## Stamina System
+
+**Mental Stamina**
 Earned via mindfulness/breathing/mobility.
 Formula emphasizes duration & effectiveness, moderates intensity.
 
-Physical Stamina
+**Physical Stamina**
 Earned via cardio/strength/endurance.
 Formula weights intensity (MET) and duration higher.
 
-Levels
+**Levels**
 Starter (0–24), Beginner (25–49), Beginner+ (50–99),
 Intermediate (100–149), Advanced (150–199), Elite (200+)
 
-Audio Guidance
-Healing (Mental/Mindfulness)
+### Audio Guidance
+
+**Healing (Mental/Mindfulness)**
 Calming neural voice (or device TTS fallback)
 
 Background tracks (multi-select), seamless loop
 
 Auto-duck under voice, gentle prompts
 
-Motivational (Physical/Cardio)
+**Motivational (Physical/Cardio)**
 Energetic neural voice (cached lines)
 
 BPM step sync: swaps among curated BPM tracks per intensity
@@ -212,7 +226,8 @@ BPM step sync: swaps among curated BPM tracks per intensity
 Micro-commands via Push-to-Talk:
 Pause / Resume / Skip / How long left? / Slower / Faster
 
-Settings & Privacy
+## Settings & Privacy
+
 Toggles (default ON): Use AI Text, Use Neural Voice, BPM Sync, Two-Choice Prompt
 
 Voice picker, music multi-select, disliked exercises, equipment
@@ -221,60 +236,60 @@ Privacy: sends only anonymized aggregates to AI; no raw personal logs
 
 Budget: caching + rate limits target <$3/mo typical usage
 
-Development
-Scripts
+## Development
+
+**Scripts**
 bash
-コピーする
-編集する
+
 npm run dev # start
 npm run test # unit tests
 npm run build:web # web build
-Platform Support
+
+**Platform Support**
 iOS: primary target, fully supported
 
 Web: text & most UI; mic/background audio may be limited by browser policies
 
 Android: bring-up with Expo Dev Client (not primary for this plan)
 
-Contributing
+**Contributing**
 Fork → 2) Feature branch → 3) Implement → 4) Test → 5) PR
 
-License
+**License**
 MIT
 
 Support
 Open an issue or contact the dev team.
 
-Dev-only Test Tab Toggle
+## **Dev-only Test Tab Toggle**
+
 What: the workout(test) tab is hidden by default, controlled by EXPO_PUBLIC_SHOW_TEST_TAB.
 
 Default OFF. Quick enable for a single session:
 
-Windows (PowerShell)
+**Windows (PowerShell)**
 
 powershell
-コピーする
-編集する
+
 $env:EXPO_PUBLIC_SHOW_TEST_TAB=1; npx expo start -c
-Windows (cmd.exe)
+
+**Windows (cmd.exe)**
 
 bat
-コピーする
-編集する
+
 set EXPO_PUBLIC_SHOW_TEST_TAB=1 && npx expo start -c
-macOS/Linux
+
+**macOS/Linux**
 
 bash
-コピーする
-編集する
+
 EXPO_PUBLIC_SHOW_TEST_TAB=1 npx expo start -c
 Verify: console.log(process.env.EXPO_PUBLIC_SHOW_TEST_TAB) → "1"/"true".
 
-Optional script:
+** Optional script:**
 
 json
-コピーする
-編集する
+
 {
 "scripts": {
 "dev:test": "EXPO*PUBLIC_SHOW_TEST_TAB=1 expo start -c"

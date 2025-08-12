@@ -2,7 +2,8 @@
 
 ## – (Development Outline)
 
-Phase 1 – Foundation & Core
+### Phase 1 – Foundation & Core
+
 Finalize Core Architecture
 
 Confirm tech stack (React Native + Supabase + AI API).
@@ -17,7 +18,8 @@ MET-based workout recommendations.
 
 Mental & physical stamina tracking logic.
 
-Phase 2 – Enhanced Science Layer
+### Phase 2 – Enhanced Science Layer
+
 Add Training Monotony & Strain (MET-based)
 
 Automated daily/weekly calculation.
@@ -28,7 +30,8 @@ Light-touch Check-ins
 
 2-choice daily cards only when score is below threshold.
 
-Phase 3 – AI Integration
+### Phase 3 – AI Integration
+
 Conversational Coach
 
 Voice-based Q&A during workouts (“How much time left?” → “2 minutes”).
@@ -41,7 +44,8 @@ Music tempo adapts to workout intensity.
 
 Option for environment sounds.
 
-Phase 4 – Optimization & Gamification
+### Phase 4 – Optimization & Gamification
+
 User Personalization
 
 Adaptive recommendation system (learns from user behavior).
@@ -54,7 +58,8 @@ Retention & Engagement
 
 Push notifications aligned with performance patterns.
 
-Phase 5 – Pre-launch & Scale
+### Phase 5 – Pre-launch & Scale
+
 Closed Beta Testing
 
 Collect feedback on AI coach and music sync.
