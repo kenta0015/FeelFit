@@ -1,298 +1,522 @@
-# Fitness App — AI Suggestion, Audio, and AI Comment Plan
+# Fitness App — Concise Development Outline
 
-## – (Development Outline)
+(Group A = AI/Ranking/metrics, Group B = App/UI & audio/assets/QA/polish)
 
-### Phase 1 – Foundation & Core
+## Phase 0 — Foundations
 
-Finalize Core Architecture
+Env & Wrappers (A): Set up API keys and test connections (OpenAI, ElevenLabs).
 
-Confirm tech stack (React Native + Supabase + AI API).
+Consent & Toggles (B, C): Add consent modal and settings toggles (AI text, Neural voice).
 
-Establish modular codebase for future AI/voice features.
+## Phase 1 — State & Signals
 
-Core Workout Flow
+Plan Context (A): Centralize user inputs (emotion, goal, time, equipment).
 
-User goal setup (mental, physical, or hybrid focus).
+Signals (A): Compute workout trends (streaks, strain, monotony) for adaptive logic.
 
-MET-based workout recommendations.
+## Phase 2 — Ranking Engine
 
-Mental & physical stamina tracking logic.
+Exercise Templates (A, C): Define workouts with metadata (MET, category, intensity).
 
-### Phase 2 – Enhanced Science Layer
+Scoring & Builder (A): Rank exercises with science-based metrics; handle rest/strain.
 
-Add Training Monotony & Strain (MET-based)
+Suggestion Card UI (B, C): Display plan, “Why this?”, edit/refresh options. Show two-choice card only when needed.
 
-Automated daily/weekly calculation.
+2.3 Suggestion Card (Normal)
 
-Highlight “high uncertainty” days.
+## Phase 3 — AI Suggestion
 
-Light-touch Check-ins
+OpenAI Rewrite (A): Turn plan into natural coaching text, cached for speed.
 
-2-choice daily cards only when score is below threshold.
+UI Integration (B, C): Insert AI text into Suggestion Card with fallback.
 
-### Phase 3 – AI Integration
+## Phase 4 — Audio
 
-Conversational Coach
+Neural TTS (A): Generate energetic coach voice; cache with fallback to device TTS.
 
-Voice-based Q&A during workouts (“How much time left?” → “2 minutes”).
+Mixer & Ducking (B, C): Balance healing music + voice; sync music BPM to exercise.
 
-Personality modes: Energetic / Soothing / Strict.
+Conversational Commands (A/B): Predefined voice commands (“pause”, “time left”) for interactive coaching.
 
-BGM Sync
+## Phase 5 — AI Comment
 
-Music tempo adapts to workout intensity.
+Metrics & Scheduler (A): Aggregate logs daily (strain, streaks, stamina changes).
 
-Option for environment sounds.
+Buckets → AI Polish (A): Map user progress to feedback categories, refine with AI.
 
-### Phase 4 – Optimization & Gamification
+UI (B, C): Show “Coach Note” card with history (14 days).
 
-User Personalization
+## Phase 6 — Settings, Privacy, Budget
 
-Adaptive recommendation system (learns from user behavior).
+Settings (B): Toggles for AI/voice/music/rest suggestions, equipment/dislikes.
 
-Gamified Progress
+Budget Guardrails (A, C): Rate limits and retry logic to keep costs <$3/mo.
 
-Achievement badges for consistency, improvements, and milestones.
-
-Retention & Engagement
-
-Push notifications aligned with performance patterns.
-
-### Phase 5 – Pre-launch & Scale
-
-Closed Beta Testing
-
-Collect feedback on AI coach and music sync.
-
-Analytics & Iteration
-
-Track engagement, workout completion, and user satisfaction.
-
-Launch Campaign
-
-Targeted to light/medium fitness users.
-
-(Person A = AI/Ranking/Metrics, Person B = App/UI & Audio, Person C = Support for B: Assets/QA/Polish)
-
----
-
-# step by step instruction (more detailed version)
-
-## Phase 0 — Foundations (Day 0)
-
-**0.1 Env & Wrappers — A**  
-Add `.env`: `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`  
-Files: `ai/openaiClient.ts`, `audio/ttsClient.ts`  
-DoD: Keys loaded; “ping” success
-
-**0.2 Consent & Toggles (default ON) — B (C QA)**  
-One-time consent (“AI uses anonymized metrics”)  
-Settings toggles (default ON): Use AI Text, Use Neural Voice  
-Files: `screens/SettingsScreen.tsx`, `utils/prefs.ts`  
-DoD: Persistence OK, no re-display
-
----
-
-## Phase 1 — State & Signals (Rules fallback spine)
-
-**1.1 Plan Context & Selectors — A**  
-Store: `emotion`, `goal`, `timeAvailable`, `intensityPref`, `equipment[]`, `constraints`, `disliked[]`  
-Signals (including additional):  
-`streak`, `7dSessions`, `7dMinutes`, `recentIntensityAvg`, `mentalΔ`, `physicalΔ`, `acuteLoad3d`, `monotony7d`, `strain7d`, `sRPElite7d`, `earlyStopRate`, `skipCount`, `lastHighGap`  
-Files: `store/usePlanStore.ts`, `logic/selectors.ts`  
-DoD: Non-destructive to existing flow, memoized OK
-
----
-
-## Phase 2 — Ranking Engine (On-device, Deterministic)
-
-**2.1 Exercise Templates — A (C Copy Help)**  
-JSON: `focus`, `intensity`, `equipment`, `recoveryFit`, `met`, `category`  
-File: `data/exerciseTemplates.json`  
-DoD: ≥12 types (mobility/core/cardio/strength/mindfulness)
-
-**2.2 Scoring & Plan Builder — A**  
-`rankExercises(ctx)` → `Ranked[]` (based on MET × time × completion rate + Recovery/Variety/Progression/Constraints)  
-Zero-input basis: weighted `monotony7d` / `strain7d` / `acuteLoad3d` / `sRPElite7d`  
-`buildPlan(ranked)` → `{blocks, totalTime, why[]}` (Monotony/Strain reflected in “Why this?”)  
-File: `logic/rankExercises.ts`  
-DoD: Deterministic, respects constraints/dislikes, with reasoning
-
-**2.3 Suggestion Card UI — B (C QA)**  
-Display: Title / Blocks / Total Time / “Why this?” (Monotony/Strain note)  
-Buttons: [Start] [Edit] [Refresh]  
-Two-choice card only on uncertain days (auto-skip in 3s): Push harder / Take it easy → ranking adjustment  
-Files: `components/SuggestionCard.tsx`, `components/EditPlanSheet.tsx`, `components/TwoChoicePrompt.tsx`  
-DoD: Live updates on input change, two-choice only under threshold
-
----
-
-## Phase 3 — AI Suggestion (Default ON, Cached)
-
-**3.1 OpenAI Rewrite — A**  
-`generateSuggestionText(plan, ctx)` (energetic, 2–4 sentences, natural insertion of one-line reasoning)  
-Cache key: `sha1(date + planHash + ctxHash)` (AsyncStorage/FileSystem)  
-Files: `ai/suggestion.ts`, `utils/cache.ts`  
-DoD: First run <3s / cache <300ms, fallback to rules text on failure
-
-**3.2 UI Integration — B (C QA)**  
-Use AI text if available, otherwise fallback  
-[Refresh] disabled unless input changes → regenerate  
-DoD: No duplicate calls, budget logging in dev
-
----
-
-## Phase 4 — Audio: Neural TTS + Healing Music (with Fallback)
-
-**4.1 ElevenLabs TTS (Energetic Coach) — A**  
-`synthesize(script, voiceId)` → mp3, cache by `(voiceId + hash(script))`  
-File: `audio/TTSService.ts`  
-DoD: Fallback to device TTS when offline
-
-**4.2 Mixer & Ducking — B (C QA/Assets)**  
-Expo AV: TrackA = Healing (loop/shuffle, multi-select) / TrackB = Voice  
-During voice: auto-duck A (~20%), then restore, crossfade  
-BPM tier sync: switch at 90/110/130/150 BPM (swap by intensity)  
-Files: `audio/AudioEngine.ts`, `hooks/useAudioEngine.ts`, `components/HealingMusicPicker.tsx`, `/assets/healing/*`  
-DoD: Seamless loops, no leaks, minimal switch disruption
-
-**4.3 Conversational Micro-commands (Preset) — A/B**  
-Local intents: Pause / Resume / Skip / Time remaining / Slower / Faster  
-Responses pre-synthesized & cached, with PTT button, music duck integration  
-Files: `audio/VoiceIntents.ts`, `components/PTTButton.tsx`  
-DoD: ≥95% success rate, <300ms response (cached)
-
----
-
-## Phase 5 — AI Comment (Daily Summary, Cached, Fallback)
-
-**5.1 Metrics & Scheduler — A**  
-Post-log / 21:00 daily (or next launch) aggregation  
-Supabase: `daily_summaries {date, text, metrics}`  
-Files: `logic/summaryMetrics.ts`, `features/dailySummary/storage.ts`  
-DoD: One per day, idempotent
-
-**5.2 Heuristic Bucket → AI Polish — A**  
-Buckets: Consistency / Comeback / PR / Encouragement  
-`generateDailySummary(ctx)` → text (date-cached, fallback to rules)  
-File: `ai/dailySummary.ts`  
-DoD: Naturally incorporates metrics
-
-**5.3 UI — B (C QA)**  
-“Coach Note” card, 14-day history  
-Files: `features/dailySummary/CoachNote.tsx`, `features/dailySummary/History.tsx`  
-DoD: No duplicates
-
----
-
-## Phase 6 — Settings, Privacy, Budget & Reliability
-
-**6.1 Settings Completion — B**  
-Toggles: AI Text / Neural Voice / BPM Sync / Two-Choice Card, Voice picker, Music multi-select, Disliked, Equipment  
-DoD: Persistent, instant apply
-
-**6.2 Budget Guardrails — A (C QA)**  
-Rate limit: 1 suggestion/day, 1 summary/day (dev override OK)  
-Token meter (dev), exponential backoff, circuit breaker  
-Files: `utils/rateLimit.ts`, `utils/retry.ts`  
-DoD: <$3/month (normal use), controlled even with heavy audio use
-
-**6.3 Privacy Note — B**  
-Below toggles: **“Sends anonymized aggregates only.”**  
-DoD: Wording approved
-
----
+Privacy Note (B): Clear message: only anonymized aggregates sent.
 
 ## Phase 7 — QA & Release
 
-**7.1 iOS End-to-End — B (C QA)**  
-Flow: Inputs → Suggestion (AI) → Audio (Voice+Healing+BPM) → Log → Next-day summary  
-DoD: Stable duck/restore, 0 crashes
+iOS E2E (B, C): Full test: input → suggestion → audio → log → daily summary.
 
-**7.2 Web Checks — B (C QA)**  
-Text functions OK, audio limitations stated  
-DoD: No blockers, graceful degradation
+Web Checks (B, C): Text functions OK, document audio limitations.
 
-**7.3 Performance & Accessibility — A/B/C**  
-First load <3s, re-show <300ms, 60fps, VoiceOver labels  
+Perf & Accessibility (A/B/C): Ensure speed (<3s first AI, <300ms cached), stable 60fps, accessible UI.
+
+## Parallelization (Short Form)
+
+Day 0: Env setup (A) + Toggles (B).
+
+Weeks 1–2: Core signals (A) + Ranking/UI (A/B) + Audio base (A/B/C).
+
+Weeks 3–4: AI suggestion + Audio polish + Daily summary (A/B).
+
+Weeks 5–6: Monotony/strain logic, conversational commands, QA hardening.
+
+Optional: Personality coach if time allows.
+
+# Step-by-Step Implementation (detailed)
+
+(Team A = AI/Ranking/metrics, Team B = App/UI & audio/assets/QA/polish)
+
+## Phase 0 — Foundations (Day 0)
+
+### 0.1 Env & Wrappers — A
+
+Add .env: OPENAI_API_KEY, ELEVENLABS_API_KEY
+
+Files: ai/openaiClient.ts, audio/ttsClient.ts
+
+DoD: Keys loaded; “ping” success
+
+**Consent Modal**
+
+┌─────────────────────────────┐
+│ 🔐 Allow AI Coaching? │
+│ AI uses anonymized metrics │
+│ │
+│ [Decline] [Accept ✅] │
+└─────────────────────────────┘
+
+### 0.2 Consent & Toggles (default ON) — B (C QA)
+
+One-time consent: “AI uses anonymized metrics”
+
+Settings toggles (default ON): Use AI Text, Use Neural Voice
+
+Files: screens/SettingsScreen.tsx, utils/prefs.ts
+
+DoD: Persistence OK, no re-display
+
+**Settings (Toggles)**
+
+┌ Settings ───────────────────┐
+│ [ON] Use AI Text │
+│ [ON] Use Neural Voice │
+│ │
+│ i Sends anonymized aggregates only. │
+└─────────────────────────────┘
+
+## Phase 1 — State & Signals (Rules fallback spine)
+
+### 1.1 Plan Context & Selectors — A
+
+Store: emotion, goal, timeAvailable, intensityPref, equipment[], constraints, disliked[]
+
+Signals (incl. additional):
+streak, 7dSessions, 7dMinutes, recentIntensityAvg, mentalΔ, physicalΔ, acuteLoad3d, monotony7d, strain7d, sRPElite7d, earlyStopRate, skipCount, lastHighGap
+
+Files: store/usePlanStore.ts, logic/selectors.ts
+
+DoD: Non-destructive to existing flow; selectors memoized
+
+**Home (Inputs + Signals)**
+
+┌ Home ───────────────────────────────────────────────┐
+│ Focus: 🧠 Mental / 💪 Physical / ⚖️ Both │
+│ Emotion: 🙂 😌 😤 😣 😴 │
+│ Goal: ⚡ Metabolism 🏃 Stamina 💧 Recovery ... │
+│ Time: 10m 15m 20m 30m │
+│ │
+│ Signals: Streak: 3 | 7d Min: 85 | Intensity: Med │
+└─────────────────────────────────────────────────────┘
+
+## Phase 2 — Ranking Engine (On-device, Deterministic)
+
+### 2.1 Exercise Templates — A
+
+JSON fields: focus, intensity, equipment, recoveryFit, met, category
+
+File: data/exerciseTemplates.json
+
+DoD: ≥12 types（mobility / core / cardio / strength / mindfulness）
+
+### 2.2 Scoring & Plan Builder — A
+
+rankExercises(ctx) → Ranked[]
+
+Base: MET × time × completion%
+
+Zero-input modifiers（weights）：monotony7d / strain7d / acuteLoad3d / sRPElite7d
+
+Constraints & dislikes respected
+
+buildPlan(ranked) → { blocks, totalTime, why[] }
+
+“Why this?” includes Monotony/Strain note
+
+File: logic/rankExercises.ts
+
+DoD: Deterministic; reasons present; constraint-safe
+
+### 2.3 Suggestion Card UI — B
+
+Display: Title / Blocks / Total Time / “Why this?”（Monotony/Strain）
+
+Actions: [Start] [Edit] [Refresh]
+
+Two-Choice Card（only on uncertain days; auto-skip in 3s）: Push harder / Take it easy → temporary ranking bias
+
+Files: components/SuggestionCard.tsx, components/EditPlanSheet.tsx, components/TwoChoicePrompt.tsx
+
+DoD: Live updates; two-choice only under threshold
+
+**Suggestion Card (Normal)**
+
+┌ Today’s Plan ───────────────────────────────────────┐
+│ 🏷️ Title: Mindful Mobility + Light Cardio (20m) │
+│ ⏱️ Blocks: │
+│ • Cat–Cow (5m) • Box Breathing (5m) │
+│ • Walk LISS (10m, MET 3.0) │
+│ 📌 Why this? Monotony↑ → add variety & lower strain │
+│ │
+│ [▶ Start] [✏ Edit] [↻ Refresh] │
+└─────────────────────────────────────────────────────┘
+
+**Edit Plan Sheet**
+
+┌ Edit Plan ──────────────────────────────────────────┐
+│ Time: 15 20 25 30 | Intensity: Low Med High │
+│ Focus: Mobility / Strength / Cardio / Mindfulness │
+│ Swap: [Cat–Cow] → [Hip Opener] │
+│ [Save ✅] [Cancel] │
+└─────────────────────────────────────────────────────┘
+
+**“Uncertain Day” Two-Choice Card**
+
+┌ How do you feel today? (auto close in 3s) ┐
+│ 💥 Push harder 🌿 Take it easy │
+└────────────────────────────────────────────┘
+
+### 2.4 Rest / Active Recovery Recommendation — A/B
+
+Triggers（examples, tune via QA）:
+
+monotony7d ≥ 2.0 OR strain7d in personal top 25% (last 28d)
+
+acuteLoad3d ≥ 1.6 ×(28d per-day avg) OR lastHighGap < 1d with earlyStopRate ↑
+
+Caps: ≤2 per week, ≥48h between triggers
+
+**Recommendations**:
+
+Rest（no session） / Active Recovery（15–20m mobility+mindfulness, low MET） / LISS 15m
+
+UI: Banner above SuggestionCard with [Recover Today] [Keep Normal]
+
+Logging: user choice → adjust future thresholds mildly
+
+DoD: Non-blocking; acceptance/decline logged; visible rationale line
+
+**Recovery Suggestion**
+
+┌ ⚠️ Recovery Suggestion ─────────────────────────────┐
+│ Recent load ↑ & monotony high. │
+│ → Try Active Recovery (15–20m). │
+│ [Recover Today 🌿] [Keep Normal ➡️] │
+└─────────────────────────────────────────────────────┘
+
+## Phase 3 — AI Suggestion (Default ON, Cached)
+
+### 3.1 OpenAI Rewrite — A
+
+generateSuggestionText(plan, ctx)（energetic, 2–4 sentences, includes reasoning line）
+
+Cache key: sha1(date + planHash + ctxHash)（AsyncStorage/FileSystem）
+
+Files: ai/suggestion.ts, utils/cache.ts
+
+DoD: First <3s / Cache <300ms; fallback to rules text on failure
+
+### 3.2 UI Integration — B
+
+Use AI text if available; else fallback
+
+[Refresh] only when inputs changed → regenerate
+
+DoD: No duplicate calls; dev budget logging
+
+**AI-generated Suggestion**
+
+┌ Coach Says 🤖🎙️ ───────────────────────────────────┐
+│ "Great day for a lighter reset. We'll open hips, │
+│ steady your breath, then finish with an easy walk." │
+│ Reason: Monotony trending high → add variety. │
+└─────────────────────────────────────────────────────┘
+
+## Phase 4 — Audio: Neural TTS + Healing Music (with Fallback)
+
+### 4.1 ElevenLabs TTS (Energetic Coach) — A
+
+synthesize(script, voiceId) → mp3
+
+Cache key: (voiceId + hash(script))
+
+File: audio/TTSService.ts
+
+DoD: Offline → device TTS fallback
+
+### 4.2 Mixer & Ducking — B
+
+Expo AV: TrackA = Healing (loop/shuffle, multi-select) / TrackB = Voice
+
+During voice: auto-duck A (~20%), then restore; 2.0s crossfade
+
+BPM tier sync: switch at 90 / 110 / 130 / 150 BPM by intensity
+
+Files: audio/AudioEngine.ts, hooks/useAudioEngine.ts, components/HealingMusicPicker.tsx, /assets/healing/\*
+
+DoD: Seamless loops; no leaks; minimal switch disruption
+
+### 4.3 Conversational Micro-commands (Preset) — A/B
+
+Local intents: Pause / Resume / Skip / Time remaining / Slower / Faster
+
+Responses pre-synthesized & cached; PTT button; music duck integration
+
+Files: audio/VoiceIntents.ts, components/PTTButton.tsx
+
+DoD: ≥95% success; <300ms response（cached）
+
+**Workout Player**
+
+┌ Player ─────────────────────────────────────────────┐
+│ 00:12 / 20:00 ▓▓▓▓▓░░░░░░ │
+│ Now: Box Breathing (5m) │
+│ Voice: 🎧 Neural (ElevenLabs) Music: 🌊 Ocean │
+│ Ducking: ON | BPM Tier: 110 → 130 (Next) │
+│ │
+│ [⏯ Pause] [⏭ Skip] [⏱ Time Left?] [🐢 Slower] [⚡ Faster] │
+│ 🎤 PTT: Hold to ask │
+└─────────────────────────────────────────────────────┘
+
+**Healing Music Picker**
+
+┌ Healing Tracks ─────────────────────────────────────┐
+│ [✓] 🌊 Ocean Calm (loop) [ ] 🎹 Soft Piano │
+│ [✓] 🌳 Forest Air (loop) [ ] 🔉 Binaural Lite │
+│ Selected: Ocean, Forest (shuffle) │
+└─────────────────────────────────────────────────────┘
+
+## Phase 5 — AI Comment (Daily Summary, Cached, Fallback)
+
+### 5.1 Metrics & Scheduler — A
+
+Post-log & 21:00 daily（or next launch）aggregation
+
+Supabase: daily_summaries { date, text, metrics }
+
+Files: logic/summaryMetrics.ts, features/dailySummary/storage.ts
+
+DoD: One per day; idempotent
+
+### 5.2 Heuristic Bucket → AI Polish — A
+
+Buckets: Consistency / Comeback / PR / Encouragement
+
+generateDailySummary(ctx) → text（date-cached; fallback to rules）
+
+File: ai/dailySummary.ts
+
+DoD: Uses metrics naturally
+
+### 5.3 UI — B
+
+Coach Note card; 14-day history
+
+Files: features/dailySummary/CoachNote.tsx, features/dailySummary/History.tsx
+
+DoD: No duplicates
+
+**Coach Note (for Today)**
+
+┌ Coach Note (Today) ─────────────────────────────────┐
+│ Streak: 4 | 7d: 4 sessions / 132 min │
+│ "Solid consistency. Light variety kept strain in check." │
+│ CTA: [Plan 15m Recovery] [View History] │
+└─────────────────────────────────────────────────────┘
+
+**History (14 Days)**
+
+┌ History (14d) ──────────────────────────────────────┐
+│ • 08/10 20m Monotony↑ → Variety day ✅ │
+│ • 08/11 25m Strength PR 💪 │
+│ • 08/12 Rest suggested → Accepted 🌿 │
+│ • 08/13 30m Cardio LISS 🚶 │
+│ ... [More]│
+└─────────────────────────────────────────────────────┘
+
+## Phase 6 — Settings, Privacy, Budget & Reliability
+
+### 6.1 Settings Completion — B
+
+Toggles: AI Text / Neural Voice / BPM Sync / Two-Choice Card
+
+Also: Voice picker, Music multi-select, Disliked, Equipment
+
+DoD: Persistent; instant effect
+
+### 6.2 Budget Guardrails — A (C QA)
+
+Rate limits: 1 suggestion/day, 1 summary/day（dev override OK）
+
+Dev token meter; exponential backoff; circuit breaker
+
+Files: utils/rateLimit.ts, utils/retry.ts
+
+DoD: <$3/month (typical); controlled under heavier audio
+
+### 6.3 Privacy Note — B
+
+Under toggles: “Sends anonymized aggregates only.”
+
+DoD: Copy approved
+
+**Settings (Extended)**
+
+┌ Settings ───────────────────────────────────────────┐
+│ [ON] Use AI Text [ON] Neural Voice │
+│ [ON] BPM Sync [ON] Two-Choice Prompt │
+│ Voice: Energetic / Calm / Strict │
+│ Music: [Ocean] [Forest] [Piano] [Binaural] │
+│ Disliked: [Burpees] [HIIT] ... │
+│ Equipment: [DB] [Band] [Mat] │
+│ i Sends anonymized aggregates only. │
+│ $ Budget Meter: ████░ (under $3/mo) │
+└─────────────────────────────────────────────────────┘
+
+## Phase 7 — QA & Release
+
+### 7.1 iOS End-to-End — B
+
+Flow: Inputs → Suggestion（AI）→ Audio（Voice+Healing+BPM）→ Log → Next-day summary
+
+DoD: Stable duck/restore; 0 crashes
+
+### 7.2 Web Checks — B
+
+Text features OK; audio limitations stated
+
+DoD: No blockers; graceful degradation
+
+### 7.3 Performance & Accessibility — A/B/
+
+First load <3s; re-show <300ms; 60fps; VoiceOver labels
+
 DoD: All pass
 
----
+[Select Focus/Time] → [Suggestion Card+Why] → [AI Text]
+↓ ↓
+[Two-Choice / Rest Banner] [▶ Start]
+↓ ↓
+[Player: Voice+Healing+BPM] ←→ [PTT Commands]
+↓
+[Log Done] → [21:00 Daily Coach Note] → [History]
 
 ## Task Matrix (Owner → Key Deliverables)
 
-**A:**  
-`store/usePlanStore.ts`, `logic/selectors.ts` (Monotony/Strain etc.)  
-`data/exerciseTemplates.json`, `logic/rankExercises.ts`  
-`ai/suggestion.ts`, `ai/dailySummary.ts`  
-`logic/summaryMetrics.ts`, `utils/{cache,rateLimit,retry}.ts`  
-`audio/TTSService.ts`, `audio/VoiceIntents.ts`
+A
+store/usePlanStore.ts, logic/selectors.ts（Monotony/Strain 等）
+data/exerciseTemplates.json, logic/rankExercises.ts
+ai/suggestion.ts, ai/dailySummary.ts
+logic/summaryMetrics.ts, utils/{cache,rateLimit,retry}.ts
+audio/TTSService.ts, audio/VoiceIntents.ts
 
-**B:**  
-`components/SuggestionCard.tsx`, `components/EditPlanSheet.tsx`, `components/TwoChoicePrompt.tsx`  
-`audio/AudioEngine.ts`, `hooks/useAudioEngine.ts`, `components/HealingMusicPicker.tsx`  
-`features/dailySummary/{CoachNote,History}.tsx`  
-`screens/SettingsScreen.tsx`, consent modal  
-`components/PTTButton.tsx`
+B
+components/SuggestionCard.tsx, components/EditPlanSheet.tsx, components/TwoChoicePrompt.tsx
+audio/AudioEngine.ts, hooks/useAudioEngine.ts, components/HealingMusicPicker.tsx
+features/dailySummary/{CoachNote,History}.tsx
+screens/SettingsScreen.tsx, consent modal
+components/PTTButton.tsx
 
-**C (Supports B):**  
-Healing audio (normalized/loop-safe), copy refinement, QA scripts, accessibility, test plan
-
----
+Healing audio（normalized / loop-safe）, copy refinement, QA scripts, accessibility, test plan
 
 ## Branching (Suggested)
 
-`feat/env-and-store-A`  
-`feat/templates-and-ranking-A`  
-`feat/suggestion-ui-B`  
-`feat/ai-suggestion-A`  
-`feat/tts-service-A`  
-`feat/audio-engine-B`  
-`feat/music-picker-B`  
-`feat/daily-summary-A` / `feat/daily-summary-B`  
-`feat/monotony-strain-A`  
-`feat/two-choice-card-B`  
-`feat/voice-intents-A` / `feat/ptt-and-ducking-B`  
-`support/assets-healing-C`, `support/qa-tests-C`
-
----
+feat/env-and-store-A
+feat/templates-and-ranking-A
+feat/suggestion-ui-B
+feat/ai-suggestion-A
+feat/tts-service-A
+feat/audio-engine-B
+feat/music-picker-B
+feat/daily-summary-A / feat/daily-summary-B
+feat/monotony-strain-A
+feat/two-choice-card-B
+feat/voice-intents-A / feat/ptt-and-ducking-B
+support/assets-healing-B, support/qa-tests-B
 
 ## Acceptance Checklist (Condensed)
 
-- **Ranking:** Respects constraints/preferences, “Why this?” always visible (Monotony/Strain reflected)
-- **AI Suggestion:** Daily cache, fallback to rules, first <3s / re <300ms
-- **Audio:** ElevenLabs cache, healing loop, stable duck, BPM tier sync OK
-- **Conversational:** Preset commands ≥95% success, <300ms response
-- **Daily Summary:** One/day, 14-day history, no duplicates
-- **Two-Choice Card:** Only under threshold, ≤1/day, auto-skip available
-- **Settings/Privacy:** Toggles default ON, wording OK
-- **Budget:** <$3/month (normal), retries/CB functional
-- **QA:** iOS E2E pass, Web degrades gracefully under constraints
+Ranking: constraints/preferences respected; “Why this?” always on（Monotony/Strain indicator）
 
----
+Rest/Recovery: triggers/caps working; non-blocking; user choice logged
+
+AI Suggestion: daily cache; fallback OK; first <3s / re <300ms
+
+Audio: ElevenLabs cache; healing loop; stable duck; BPM tier sync OK
+
+Conversational: preset commands ≥95% success; <300ms response
+
+Daily Summary: 1/day; 14-day history; no dupes
+
+Two-Choice Card: threshold-only; ≤1/day; auto-skip works
+
+Settings/Privacy: toggles default ON; wording approved
+
+Budget: <$3/month typical; retries / CB functional
+
+QA: iOS E2E pass; Web degrades gracefully
 
 ## Parallel — Task Allocation (Short-term Schedule & Merge Conditions)
 
-**Day 0 (Phase 0) — Parallel**  
-A: 0.1 / B: 0.2 / C: Asset prep  
-Gate: Toggles, consent, keys OK
+### Day 0（Phase 0）— Parallel
 
-**Weeks 1–2 (Phases 1–2) — Parallel**  
-A: 1.1 → 2.1 → 2.2 (Plan type fixed)  
-B: 2.3 (with mock Plan), Two-Choice UI frame hidden  
-C: Template/audio prep, basic QA  
-Gate: Plan type fixed, UI shows `why[]`, two-choice works under hidden flag
+A: 0.1 / B: 0.2 / C: assets prep
 
-**Weeks 3–4 (Phases 3–4–5) — Parallel**  
-A: 3.1 (AI+Cache) / 5.1 / 5.2, 4.1 (TTS)  
-B: 3.2 integration, 4.2 (Audio+BPM), 5.3 (Summary UI)  
-C: Budget/cache/nightly idempotent QA  
-Gate: Suggestion first <3s / re <300ms, TTS+duck stable, daily summary works
+Gate: toggles/consent/keys OK
 
-**Weeks 5–6 (Final Polish) — Parallel**  
-A: Monotony/Strain/sRPElite integration, reason line in both AI/rules, VoiceIntents  
-B: Two-Choice full impl (threshold/3s skip), PTT, BPM tier tuning  
-C: Threshold/regression/latency/accessibility QA  
-Gate: Monotony high → ↑ variety suggestions logged, two-choice only under condition, preset commands ≥95% success
+### Weeks 1–2（Phases 1–2）— Parallel
 
-> **Personality Coach**: If time allows, implement minimal version (text template + Voice ID map) at the end of Weeks 5–6.
+A: 1.1 → 2.1 → 2.2（Plan type fixed）
+
+B: 2.3（mock Plan）＋ Two-Choice UI skeleton（hidden,templates & healing assets; basic QA
+
+Gate: Plan type fixed; UI shows why[]; two-choice works under hidden flag
+
+### Weeks 3–4（Phases 3–4–5）— Parallel
+
+A: 3.1（AI+Cache）/ 5.1 / 5.2, 4.1（TTS）
+
+B: 3.2 integration, 4.2（Audio+BPM tiers）, 5.3（Summary UI）,budget/cache/nightly idempotent QA
+
+Gate: Suggestion first <3s / re <300ms; TTS+duck stable; daily summary works
+
+### Weeks 5–6（Final Polish）— Parallel
+
+A: Monotony/Strain/sRPElite integration; reasoning line for AI/rules; VoiceIntents
+
+B: Two-Choice full impl（threshold + 3s skip）; PTT; BPM tier tuning,thresholds/regression/latency/accessibility QA
+
+Gate: Monotony high → ↑ variety suggestions（logs）; Two-Choice only under condition; preset commands ≥95% success
+
+Personality coach（text templates + Voice ID map）＝ optional at end of Weeks 5–6 if time allows.
