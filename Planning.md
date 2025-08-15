@@ -90,12 +90,14 @@ DoD: Keys loaded; “ping” success
 
 **Consent Modal**
 
+```css
 ┌─────────────────────────────┐
 │ 🔐 Allow AI Coaching? │
 │ AI uses anonymized metrics │
 │ │
 │ [Decline] [Accept ✅] │
 └─────────────────────────────┘
+```
 
 ### 0.2 Consent & Toggles (default ON) — B (C QA)
 
@@ -109,12 +111,16 @@ DoD: Persistence OK, no re-display
 
 **Settings (Toggles)**
 
+```pgsql
+
 ┌ Settings ───────────────────┐
 │ [ON] Use AI Text │
 │ [ON] Use Neural Voice │
 │ │
 │ i Sends anonymized aggregates only. │
 └─────────────────────────────┘
+
+```
 
 ## Phase 1 — State & Signals (Rules fallback spine)
 
@@ -131,6 +137,7 @@ DoD: Non-destructive to existing flow; selectors memoized
 
 **Home (Inputs + Signals)**
 
+```yaml
 ┌ Home ───────────────────────────────────────────────┐
 │ Focus: 🧠 Mental / 💪 Physical / ⚖️ Both │
 │ Emotion: 🙂 😌 😤 😣 😴 │
@@ -139,6 +146,7 @@ DoD: Non-destructive to existing flow; selectors memoized
 │ │
 │ Signals: Streak: 3 | 7d Min: 85 | Intensity: Med │
 └─────────────────────────────────────────────────────┘
+```
 
 ## Phase 2 — Ranking Engine (On-device, Deterministic)
 
@@ -182,6 +190,8 @@ DoD: Live updates; two-choice only under threshold
 
 **Suggestion Card (Normal)**
 
+```java
+
 ┌ Today’s Plan ───────────────────────────────────────┐
 │ 🏷️ Title: Mindful Mobility + Light Cardio (20m) │
 │ ⏱️ Blocks: │
@@ -192,20 +202,28 @@ DoD: Live updates; two-choice only under threshold
 │ [▶ Start] [✏ Edit] [↻ Refresh] │
 └─────────────────────────────────────────────────────┘
 
+```
+
 **Edit Plan Sheet**
 
+```scss
 ┌ Edit Plan ──────────────────────────────────────────┐
 │ Time: 15 20 25 30 | Intensity: Low Med High │
 │ Focus: Mobility / Strength / Cardio / Mindfulness │
 │ Swap: [Cat–Cow] → [Hip Opener] │
 │ [Save ✅] [Cancel] │
 └─────────────────────────────────────────────────────┘
+```
 
 **“Uncertain Day” Two-Choice Card**
+
+```arduino
 
 ┌ How do you feel today? (auto close in 3s) ┐
 │ 💥 Push harder 🌿 Take it easy │
 └────────────────────────────────────────────┘
+
+```
 
 ### 2.4 Rest / Active Recovery Recommendation — A/B
 
@@ -229,11 +247,13 @@ DoD: Non-blocking; acceptance/decline logged; visible rationale line
 
 **Recovery Suggestion**
 
+```scss
 ┌ ⚠️ Recovery Suggestion ─────────────────────────────┐
 │ Recent load ↑ & monotony high. │
 │ → Try Active Recovery (15–20m). │
 │ [Recover Today 🌿] [Keep Normal ➡️] │
 └─────────────────────────────────────────────────────┘
+```
 
 ## Phase 3 — AI Suggestion (Default ON, Cached)
 
@@ -257,11 +277,14 @@ DoD: No duplicate calls; dev budget logging
 
 **AI-generated Suggestion**
 
+```sql
+
 ┌ Coach Says 🤖🎙️ ───────────────────────────────────┐
 │ "Great day for a lighter reset. We'll open hips, │
 │ steady your breath, then finish with an easy walk." │
 │ Reason: Monotony trending high → add variety. │
 └─────────────────────────────────────────────────────┘
+```
 
 ## Phase 4 — Audio: Neural TTS + Healing Music (with Fallback)
 
@@ -299,6 +322,8 @@ DoD: ≥95% success; <300ms response（cached）
 
 **Workout Player**
 
+```mathematica
+
 ┌ Player ─────────────────────────────────────────────┐
 │ 00:12 / 20:00 ▓▓▓▓▓░░░░░░ │
 │ Now: Box Breathing (5m) │
@@ -308,14 +333,17 @@ DoD: ≥95% success; <300ms response（cached）
 │ [⏯ Pause] [⏭ Skip] [⏱ Time Left?] [🐢 Slower] [⚡ Faster] │
 │ 🎤 PTT: Hold to ask │
 └─────────────────────────────────────────────────────┘
+```
 
 **Healing Music Picker**
 
+```scss
 ┌ Healing Tracks ─────────────────────────────────────┐
 │ [✓] 🌊 Ocean Calm (loop) [ ] 🎹 Soft Piano │
 │ [✓] 🌳 Forest Air (loop) [ ] 🔉 Binaural Lite │
 │ Selected: Ocean, Forest (shuffle) │
 └─────────────────────────────────────────────────────┘
+```
 
 ## Phase 5 — AI Comment (Daily Summary, Cached, Fallback)
 
@@ -349,14 +377,17 @@ DoD: No duplicates
 
 **Coach Note (for Today)**
 
+```yaml
 ┌ Coach Note (Today) ─────────────────────────────────┐
 │ Streak: 4 | 7d: 4 sessions / 132 min │
 │ "Solid consistency. Light variety kept strain in check." │
 │ CTA: [Plan 15m Recovery] [View History] │
 └─────────────────────────────────────────────────────┘
+```
 
 **History (14 Days)**
 
+```css
 ┌ History (14d) ──────────────────────────────────────┐
 │ • 08/10 20m Monotony↑ → Variety day ✅ │
 │ • 08/11 25m Strength PR 💪 │
@@ -364,6 +395,7 @@ DoD: No duplicates
 │ • 08/13 30m Cardio LISS 🚶 │
 │ ... [More]│
 └─────────────────────────────────────────────────────┘
+```
 
 ## Phase 6 — Settings, Privacy, Budget & Reliability
 
@@ -393,6 +425,7 @@ DoD: Copy approved
 
 **Settings (Extended)**
 
+```nbnet
 ┌ Settings ───────────────────────────────────────────┐
 │ [ON] Use AI Text [ON] Neural Voice │
 │ [ON] BPM Sync [ON] Two-Choice Prompt │
@@ -403,6 +436,8 @@ DoD: Copy approved
 │ i Sends anonymized aggregates only. │
 │ $ Budget Meter: ████░ (under $3/mo) │
 └─────────────────────────────────────────────────────┘
+
+```
 
 ## Phase 7 — QA & Release
 
@@ -424,6 +459,10 @@ First load <3s; re-show <300ms; 60fps; VoiceOver labels
 
 DoD: All pass
 
+**E2E Flow (iOS)**
+
+```css
+
 [Select Focus/Time] → [Suggestion Card+Why] → [AI Text]
 ↓ ↓
 [Two-Choice / Rest Banner] [▶ Start]
@@ -431,6 +470,8 @@ DoD: All pass
 [Player: Voice+Healing+BPM] ←→ [PTT Commands]
 ↓
 [Log Done] → [21:00 Daily Coach Note] → [History]
+
+```
 
 ## Task Matrix (Owner → Key Deliverables)
 
