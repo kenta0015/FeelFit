@@ -1,5 +1,5 @@
 // app/(tabs)/index.tsx
-// Full updated version using Supabase only + QuickPlanBar (scrolls with content)
+// Full updated version using Supabase only + Quick Input (FAB + Bottom Sheet)
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -17,7 +17,6 @@ import TimeSelector from '@/components/TimeSelector';
 import WorkoutList from '@/components/WorkoutList';
 import WorkoutTimer from '@/components/WorkoutTimer';
 import MoodRating from '@/components/MoodRating';
-import QuickPlanBar from '@/components/QuickPlanBar';
 import {
   findMentalWorkouts,
   findPhysicalWorkouts,
@@ -37,6 +36,10 @@ import { EXERCISES } from '@/data/exercises';
 import { WorkoutSession, MoodLog } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { ArrowLeft } from 'lucide-react-native';
+
+// Quick Input additions
+import FABQuick from '@/components/FABQuick';
+import QuickInputSheet from '@/components/QuickInputSheet';
 
 type StepType =
   | 'improvement-type'
@@ -98,7 +101,7 @@ export default function HomeScreen() {
   };
 
   const handleWorkoutSelect = (workoutId: string) => {
-    const exercise = EXERCISES.find(ex => ex.id === workoutId);
+    const exercise = EXERCISES.find((ex) => ex.id === workoutId);
     if (!exercise || !userId) return;
 
     const session: WorkoutSession = {
@@ -137,7 +140,8 @@ export default function HomeScreen() {
         completionPercentage
       );
     } else if (improvementType === 'physical' && selectedPhysicalPurpose) {
-      const effectiveness = selectedExercise.physicalEffectivenessScore[selectedPhysicalPurpose] || 5;
+      const effectiveness =
+        selectedExercise.physicalEffectivenessScore[selectedPhysicalPurpose] || 5;
       physicalStaminaGain = calculatePhysicalStaminaGain(
         selectedExercise.duration,
         selectedExercise.intensity,
@@ -146,7 +150,8 @@ export default function HomeScreen() {
       );
     } else if (improvementType === 'both' && selectedEmotion && selectedPhysicalPurpose) {
       const mentalEffectiveness = selectedExercise.effectivenessScore[selectedEmotion] || 5;
-      const physicalEffectiveness = selectedExercise.physicalEffectivenessScore[selectedPhysicalPurpose] || 5;
+      const physicalEffectiveness =
+        selectedExercise.physicalEffectivenessScore[selectedPhysicalPurpose] || 5;
       mentalStaminaGain = calculateMentalStaminaGain(
         selectedExercise.duration,
         selectedExercise.intensity,
@@ -276,25 +281,22 @@ export default function HomeScreen() {
             <Text style={styles.resetButtonText}>Reset</Text>
           </TouchableOpacity>
         )}
-        {(currentStep === 'workout-execution' || currentStep === 'improvement-type') && <View style={styles.spacer} />}
+        {(currentStep === 'workout-execution' || currentStep === 'improvement-type') && (
+          <View style={styles.spacer} />
+        )}
       </View>
 
-      {/* QuickPlanBar を ScrollView 内の先頭に入れて、全体をスクロール可能にする */}
+      {/* QuickPlanBar は下の Bottom Sheet に移動（ここからは削除） */}
       <ScrollView
         contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <QuickPlanBar />
-
         {currentStep === 'improvement-type' && (
           <ImprovementTypeSelector onTypeSelect={handleImprovementTypeSelect} />
         )}
         {currentStep === 'emotion' && (
-          <EmotionSelector
-            selectedEmotion={selectedEmotion}
-            onEmotionSelect={handleEmotionSelect}
-          />
+          <EmotionSelector selectedEmotion={selectedEmotion} onEmotionSelect={handleEmotionSelect} />
         )}
         {currentStep === 'physical-purpose' && (
           <PhysicalPurposeSelector
@@ -317,6 +319,10 @@ export default function HomeScreen() {
           />
         )}
       </ScrollView>
+
+      {/* Quick Input */}
+      <FABQuick hidden={currentStep === 'workout-execution'} />
+      <QuickInputSheet />
 
       <Modal visible={showMoodRating} transparent animationType="fade">
         <MoodRating onRatingSubmit={handleMoodRatingSubmit} onSkip={handleMoodRatingSkip} />

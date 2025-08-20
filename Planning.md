@@ -189,45 +189,129 @@ Replace getWorkoutMatches() in app/(tabs)/index.tsx with rankExercises.
 
 Retire the old find\*Workouts functions.
 
-## Phase 2 — Ranking Engine (On-device, Deterministic)
+# Phase 2 — Ranking Engine (On-device, Deterministic)
 
-### 2.1 Exercise Templates — A
+## Shared decisions (lock these)
 
-JSON fields: focus, intensity, equipment, recoveryFit, met, category
+- **Time buckets**: `10 / 15 / 20 / 30` minutes (fixed).
+- **Completion % (default)**: `0.9` (90%).
+- **Uncertain day (Two-Choice trigger)**: `readiness < 40`.
+- **Determinism**: Same `ctx` ⇒ same output; ties broken by **`id` ascending**.
+- **Language**: `why[]` is **English** for now.
 
-File: data/exerciseTemplates.json
+---
 
-DoD: ≥12 types（mobility / core / cardio / strength / mindfulness）
+## 2.1 Exercise Templates — A
 
-### 2.2 Scoring & Plan Builder — A
+**File**: `data/exerciseTemplates.json`  
+**Purpose**: Single source of truth for ranking (no hard-coded exercises elsewhere).
 
-rankExercises(ctx) → Ranked[]
+**Each template must include (required):**
 
-Base: MET × time × completion%
+- `id` (string, unique, stable)
+- `title` (string)
+- `focus` (`"mental" | "physical" | "both"`)
+- `intensity` (`"low" | "med" | "high"`)
+- `equipment` (string[]; e.g., `"mat"`, `"db"`, `"band"`, `"none"`)
+- `recoveryFit` (0–1, higher = better for recovery)
+- `met` (number; metabolic equivalent)
+- `category` (`"mobility" | "core" | "cardio" | "strength" | "mindfulness" | "recovery"`)
+- `duration` (minutes; integer)
 
-Zero-input modifiers（weights）：monotony7d / strain7d / acuteLoad3d / sRPElite7d
+**DoD**
 
-Constraints & dislikes respected
+- ≥ **12 distinct types** covering mobility / core / cardio / strength / mindfulness.
+- IDs unique; fields complete; values consistent with time buckets.
+- This file becomes the **only** exercise catalogue used in 2.2.
 
-buildPlan(ranked) → { blocks, totalTime, why[] }
+---
 
-“Why this?” includes Monotony/Strain note
+## 2.2 Scoring & Plan Builder — A
 
-File: logic/rankExercises.ts
+**File**: `logic/rankExercises.ts`
 
-DoD: Deterministic; reasons present; constraint-safe
+### Inputs (`ctx`)
 
-### 2.3 Suggestion Card UI — B
+From `usePlanStore`:
 
-Display: Title / Blocks / Total Time / “Why this?”（Monotony/Strain）
+- **User inputs**: `focus`, `emotion`, `timeAvailable`, `intensityPref`, `equipment[]`, `constraints`, `disliked[]`
+- **Signals** (read-only): `streak`, `sessions7d`, `minutes7d`, `recentIntensityAvg`, `mentalΔ`, `physicalΔ`, `acuteLoad3d`, `monotony7d`, `strain7d`, `sRPElite7d`, `earlyStopRate`, `skipCount`, `lastHighGap`
 
-Actions: [Start] [Edit] [Refresh]
+### Ranking
 
-Two-Choice Card（only on uncertain days; auto-skip in 3s）: Push harder / Take it easy → temporary ranking bias 「Readiness < 40」fixed standard (in the future user input base Only when「emotion ：Neutral/Unsure」is selected Two-Choice displays)
+- **Function**: `rankExercises(ctx) → Ranked[]`
+- **Base score**: `MET × duration × completionPct` (use **0.9** by default).
+- **Zero-input modifiers (weights)**: adjust score using:
+  - `monotony7d` (higher monotony → **boost variety / de-emphasize repeats**)
+  - `strain7d` (higher strain → **de-emphasize high intensity**)
+  - `acuteLoad3d` (spikes → **de-emphasize total load**)
+  - `sRPElite7d` (sustained high → **slight de-emphasis**)
+- **Constraints & dislikes**:
+  - Prefer **exclusion**: drop items that violate `constraints` or appear in `disliked`.
+  - Fallback: if zero candidates, allow soft penalties instead of exclusion (but note in `why[]`).
+- **Determinism**: after scoring, **stable sort by score desc, then `id` asc**.
 
-Files: components/SuggestionCard.tsx, components/EditPlanSheet.tsx, components/TwoChoicePrompt.tsx
+### Plan building
 
-DoD: Live updates; two-choice only under threshold
+- **Function**: `buildPlan(ranked) → { title, blocks, totalTime, why[] }`
+  - Fill with top ranked blocks **without exceeding** `timeAvailable`.
+  - `title`: short synthesized name (e.g., “Mindful Mobility + Light Cardio (20m)”).
+  - `why[]`: must include a **Monotony/Strain** reasoning line derived from signals.
+- **Fallback if no candidates**: return a safe default (e.g., 10–15m low-MET mindfulness/mobility).
+
+**DoD**
+
+- Deterministic outputs.
+- `why[]` present and understandable (English).
+- Respects constraints/dislikes; never exceeds `timeAvailable`.
+
+---
+
+## 2.3 Suggestion Card UI — B
+
+**Files**:
+
+- `components/SuggestionCard.tsx` (main card)
+- `components/EditPlanSheet.tsx` (tweak time/intensity, simple swaps)
+- `components/TwoChoicePrompt.tsx` (“Push harder / Take it easy”, auto-skip in 3s)
+
+**Card displays**
+
+- **Title** / **Blocks** (with minutes/MET) / **Total Time** / **“Why this?”** (must include Monotony/Strain note)
+
+**Actions**
+
+- `[Start]` start with current plan
+- `[Edit]` open sheet for small adjustments (time, intensity, category swaps)
+- `[Refresh]` recompute only when `ctx` changed (preserve determinism)
+
+**Two-Choice Prompt**
+
+- Shown **only when** `readiness < 40`
+- Choices apply a **temporary ranking bias** for this session only:
+  - **Push harder**: modest +intensity weighting
+  - **Take it easy**: modest −intensity / +recovery weighting
+- Auto-dismiss after 3s (defaults to no bias).
+
+**Data contract (from 2.2 → 2.3)**
+
+- **Plan DTO**:
+  - `title: string`
+  - `blocks: { id: string; title: string; duration: number; met: number; intensity: 'low'|'med'|'high'; category: string }[]`
+  - `totalTime: number`
+  - `why: string[]`
+- **UI props**:
+  - `plan: Plan`
+  - `isUncertainDay: boolean` (derived from `readiness < 40`)
+  - `onStart(plan)`, `onEdit(plan)`, `onRefresh()`
+
+**DoD**
+
+- Renders from Plan DTO with live updates.
+- Two-Choice shows **only** when `isUncertainDay` is true.
+- Refresh reuses determinism (no unnecessary recompute).
+
+---
 
 **Suggestion Card (Normal)**
 
@@ -266,25 +350,37 @@ DoD: Live updates; two-choice only under threshold
 
 ```
 
-### 2.4 Rest / Active Recovery Recommendation — A/B
+## 2.4 Rest / Active Recovery Recommendation — A/B
 
-Triggers（examples, tune via QA）:
+**Triggers** (tune with QA; any one is enough):
 
-monotony7d ≥ 2.0 OR strain7d in personal top 25% (last 28d)
+- `monotony7d ≥ 2.0` **OR** `strain7d` in personal **top 25%** (last 28d)
+- `acuteLoad3d ≥ 1.6 ×` (28d daily avg) **OR** `lastHighGap < 1d` with `earlyStopRate` elevated
 
-acuteLoad3d ≥ 1.6 ×(28d per-day avg) OR lastHighGap < 1d with earlyStopRate ↑
+**Caps**
 
-Caps: ≤2 per week, ≥48h between triggers
+- ≤ **2 per week**, and **≥ 48h** between triggers.
 
-**Recommendations**:
+**Recommendation options**
 
-Rest（no session） / Active Recovery（15–20m mobility+mindfulness, low MET） / LISS 15m
+- **Rest** (no session)
+- **Active Recovery** (15–20m, mobility + mindfulness, low MET)
+- **LISS 15m**
 
-UI: Banner above SuggestionCard with [Recover Today] [Keep Normal]
+**UI**
 
-Logging: user choice → adjust future thresholds mildly
+- Banner above SuggestionCard:
+  - Text: concise rationale (e.g., “Recent load ↑ & monotony high → consider active recovery”)
+  - Actions: `[Recover Today 🌿]` / `[Keep Normal ➡️]`
 
-DoD: Non-blocking; acceptance/decline logged; visible rationale line
+**Logging**
+
+- Record user choice; later use to nudge thresholds.
+
+**DoD**
+
+- Non-blocking; clear rationale shown.
+- Acceptance/decline is logged; no unexpected plan overrides.
 
 **Recovery Suggestion**
 
@@ -295,6 +391,24 @@ DoD: Non-blocking; acceptance/decline logged; visible rationale line
 │ [Recover Today 🌿] [Keep Normal ➡️] │
 └─────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Handoff checklist
+
+1. **2.1** Create `data/exerciseTemplates.json` with ≥12 items and required fields above.
+2. **2.2** Implement `rankExercises(ctx)` and `buildPlan(ranked)` with the contracts and thresholds here.
+3. **2.3** Consume the **Plan DTO**; show Two-Choice when `isUncertainDay` (readiness < 40); wire Start/Edit/Refresh.
+4. **2.4** Add the recovery banner logic with the stated triggers, caps, options, and logging.
+
+**Acceptance tests**
+
+- Same `ctx` → identical ranking & plan.
+- No plan exceeds `timeAvailable`.
+- Constraints/dislikes are honored.
+- `why[]` always includes a Monotony/Strain line.
+- Two-Choice appears only when readiness < 40.
+- Recovery banner appears only under trigger/cap rules.
 
 ## Phase 3 — AI Suggestion (Default ON, Cached)
 
@@ -602,3 +716,150 @@ B: Two-Choice full impl（threshold + 3s skip）; PTT; BPM tier tuning,threshold
 Gate: Monotony high → ↑ variety suggestions（logs）; Two-Choice only under condition; preset commands ≥95% success
 
 Personality coach（text templates + Voice ID map）＝ optional at end of Weeks 5–6 if time allows.
+
+# Extra Steps — Stamina Decay, Skip Reason, Anchor Time
+
+---
+
+## 0) Shared Notes
+
+- Runs **on-device only** (no server required).
+- Uses existing Zustand store + AsyncStorage/Supabase where noted.
+- Timezone: device local.
+- Daily tasks run at **21:00**; if the app wasn’t open then, they **catch up on next launch**.
+
+---
+
+## 1) Daily Stamina Decay (Detraining)
+
+**Goal**: When the user skips days, gradually decrease **Physical** and **Mental** stamina.
+
+### Parameters (locked)
+
+- **Physical decay**: **3.5%/day** → multiplier `0.965^D`
+- **Mental decay**: **2.5%/day** → multiplier `0.975^D`
+- Lower bound: **0 allowed** (can reach zero).
+- Execution time: **21:00 daily** + **catch-up at app launch**.
+- No UI alerts by default.
+
+### Data needed
+
+- `lastCompletedAt` (ISO string) — last finished workout date/time.
+- `lastDecayRun` (ISO date) — last day decay was applied.
+- `physicalStamina`, `mentalStamina` (numbers).
+
+### Logic (high level)
+
+1. Compute **inactivity days** `D` since the day _after_ `lastCompletedAt`.
+2. If `D <= 0` or already applied today (`lastDecayRun == today`): **do nothing**.
+3. Apply:
+   - `physicalStamina = floor(physicalStamina * 0.965^D)`
+   - `mentalStamina   = floor(mentalStamina   * 0.975^D)`
+4. Persist updated stamina.
+5. Set `lastDecayRun = today`.
+
+### Acceptance
+
+- Skipping 7/14/30 days yields roughly:
+  - Physical ≈ 77.9% / 60.7% / 34.3%
+  - Mental ≈ 83.8% / 70.2% / 46.8%
+- Running multiple times/day doesn’t double-apply.
+- Works after cold start (catch-up).
+
+### Edge cases
+
+- No prior workouts: skip decay (stamina stays at current value).
+- System time changes: rely on **dates**, not seconds; clamp `D ≥ 0`.
+- Large gaps (e.g., 100+ days): apply once using the exponent.
+
+---
+
+## 2) Skip Reason (Optional, One-Tap)
+
+**Goal**: Capture _why_ a session was skipped—analytics + softer UX. **No effect** on decay or ranking.
+
+### UI
+
+- When user dismisses/ignores a plan (or exits workout early), show a **1-tap chip row**:
+  - `Busy`, `Fatigue`, `Sick`, `Travel`, `No Time`, `Other`
+- **Dismiss is fine**; no forced answer.
+
+### Data
+
+- `skipEvents` list (append-only):
+  - `{ id, date, reason, context? }`
+  - `reason ∈ {busy, fatigue, sick, travel, time, other}`
+
+### Behavior
+
+- Record and store locally (and Supabase if available) for later insights.
+- May show a **gentle banner** next day: “Yesterday: _Busy_. Try a 5–7 min micro-plan?”
+
+### Acceptance
+
+- Logging works even offline.
+- No impact on scoring/decay.
+- Not shown during an ongoing workout.
+
+---
+
+## 3) Anchor Time (Time Anchor)
+
+**Goal**: Let the user choose a **daily preferred time** to train. Reduce friction by suggesting a small plan if they miss it.
+
+### UX
+
+- **Settings**: pick one anchor time (e.g., `21:10`). Toggle on/off.
+- **If missed** (no session within ±60 min of anchor):
+  - Next app open: show a **micro-plan CTA (5–10 min)**: “Missed your anchor. Start a quick reset?”
+- **No notifications requirement**; purely in-app. (Push can be added later.)
+
+### Data
+
+- `anchorEnabled` (bool), `anchorTime` (HH:mm)
+- `lastAnchorCheck` (ISO date) to avoid duplicate prompts per day.
+
+### Logic
+
+1. If `anchorEnabled`:
+   - On app open or at 21:00 runner, check if today has a completed session within `[anchorTime − 60m, anchorTime + 60m]`.
+   - If **not**, and not already prompted today:
+     - Show **micro-plan CTA** (breathing + mobility 5–10m).
+     - Set `lastAnchorCheck = today`.
+2. CTA is light—dismiss is OK.
+
+### Acceptance
+
+- Anchor disabled → no prompts.
+- Only **one** prompt/day.
+- Micro-plan starts immediately when accepted.
+
+---
+
+## Implementation Order (suggested)
+
+1. **Anchor Time** (UI + simple check) — smallest surface, fast value.
+2. **Skip Reason** (chips + logging) — UI-only, no algorithm dependencies.
+3. **Stamina Decay** — pure logic + storage; validate with a few test dates.
+
+---
+
+## Minimal QA Checklist
+
+- Decay:
+  - Set fake `lastCompletedAt` 7/14/30 days ago → stamina matches expected ranges.
+  - Multiple runs same day → no extra decay.
+- Skip Reason:
+  - Tapping a chip creates a `skipEvents` record.
+  - No chip shown during active workouts.
+- Anchor Time:
+  - Set an anchor, miss it, reopen app → see micro-plan CTA once.
+  - Turning anchor off → no CTA.
+
+---
+
+## Notes for Devs
+
+- Keep constants (decay rates, anchor window) in a single `constants.ts`.
+- All features are **non-blocking** and **opt-in** (Anchor).
+- Avoid intrusive prompts; keep a friendly tone.
