@@ -223,7 +223,7 @@ Display: Title / Blocks / Total Time / “Why this?”（Monotony/Strain）
 
 Actions: [Start] [Edit] [Refresh]
 
-Two-Choice Card（only on uncertain days; auto-skip in 3s）: Push harder / Take it easy → temporary ranking bias
+Two-Choice Card（only on uncertain days; auto-skip in 3s）: Push harder / Take it easy → temporary ranking bias 「Readiness < 40」fixed standard (in the future user input base Only when「emotion ：Neutral/Unsure」is selected Two-Choice displays)
 
 Files: components/SuggestionCard.tsx, components/EditPlanSheet.tsx, components/TwoChoicePrompt.tsx
 
