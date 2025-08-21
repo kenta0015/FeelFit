@@ -1,0 +1,178 @@
+[
+  {
+    "id": "mob_cat_cow_5",
+    "title": "Cat–Cow",
+    "focus": "both",
+    "intensity": "low",
+    "equipment": ["none", "mat"],
+    "recoveryFit": 0.9,
+    "met": 2.0,
+    "category": "mobility",
+    "duration": 5
+  },
+  {
+    "id": "mob_worlds_greatest_5",
+    "title": "World’s Greatest Stretch",
+    "focus": "both",
+    "intensity": "low",
+    "equipment": ["none", "mat"],
+    "recoveryFit": 0.85,
+    "met": 2.2,
+    "category": "mobility",
+    "duration": 5
+  },
+  {
+    "id": "mind_box_breath_5",
+    "title": "Box Breathing",
+    "focus": "mental",
+    "intensity": "low",
+    "equipment": ["none"],
+    "recoveryFit": 1.0,
+    "met": 1.5,
+    "category": "mindfulness",
+    "duration": 5
+  },
+  {
+    "id": "mind_body_scan_5",
+    "title": "Body Scan",
+    "focus": "mental",
+    "intensity": "low",
+    "equipment": ["none"],
+    "recoveryFit": 0.95,
+    "met": 1.5,
+    "category": "mindfulness",
+    "duration": 5
+  },
+  {
+    "id": "card_walk_liss_10",
+    "title": "Walk LISS",
+    "focus": "physical",
+    "intensity": "med",
+    "equipment": ["none"],
+    "recoveryFit": 0.6,
+    "met": 3.0,
+    "category": "cardio",
+    "duration": 10
+  },
+  {
+    "id": "card_march_in_place_10",
+    "title": "March in Place",
+    "focus": "physical",
+    "intensity": "med",
+    "equipment": ["none"],
+    "recoveryFit": 0.6,
+    "met": 3.3,
+    "category": "cardio",
+    "duration": 10
+  },
+  {
+    "id": "core_dead_bug_10",
+    "title": "Dead Bug",
+    "focus": "both",
+    "intensity": "low",
+    "equipment": ["none", "mat"],
+    "recoveryFit": 0.75,
+    "met": 2.8,
+    "category": "core",
+    "duration": 10
+  },
+  {
+    "id": "core_plank_10",
+    "title": "Plank Flow",
+    "focus": "both",
+    "intensity": "med",
+    "equipment": ["none", "mat"],
+    "recoveryFit": 0.5,
+    "met": 3.5,
+    "category": "core",
+    "duration": 10
+  },
+  {
+    "id": "str_db_goblet_squat_10",
+    "title": "DB Goblet Squat",
+    "focus": "physical",
+    "intensity": "high",
+    "equipment": ["db"],
+    "recoveryFit": 0.2,
+    "met": 5.5,
+    "category": "strength",
+    "duration": 10
+  },
+  {
+    "id": "str_band_pullapart_10",
+    "title": "Band Pull-Apart",
+    "focus": "physical",
+    "intensity": "med",
+    "equipment": ["band"],
+    "recoveryFit": 0.5,
+    "met": 3.2,
+    "category": "strength",
+    "duration": 10
+  },
+  {
+    "id": "card_jump_rope_10",
+    "title": "Jump Rope (Easy)",
+    "focus": "physical",
+    "intensity": "high",
+    "equipment": ["none", "rope"],
+    "recoveryFit": 0.2,
+    "met": 6.0,
+    "category": "cardio",
+    "duration": 10
+  },
+  {
+    "id": "rec_yoga_flow_15",
+    "title": "Recovery Yoga Flow",
+    "focus": "both",
+    "intensity": "low",
+    "equipment": ["none", "mat"],
+    "recoveryFit": 0.95,
+    "met": 2.3,
+    "category": "recovery",
+    "duration": 15
+  },
+  {
+    "id": "card_brisk_walk_15",
+    "title": "Brisk Walk",
+    "focus": "physical",
+    "intensity": "med",
+    "equipment": ["none"],
+    "recoveryFit": 0.5,
+    "met": 3.8,
+    "category": "cardio",
+    "duration": 15
+  },
+  {
+    "id": "str_pushup_variations_10",
+    "title": "Push-up Variations",
+    "focus": "physical",
+    "intensity": "med",
+    "equipment": ["none", "mat"],
+    "recoveryFit": 0.3,
+    "met": 4.0,
+    "category": "strength",
+    "duration": 10
+  },
+  {
+    "id": "mob_hip_opener_5",
+    "title": "Hip Opener",
+    "focus": "both",
+    "intensity": "low",
+    "equipment": ["none", "mat"],
+    "recoveryFit": 0.85,
+    "met": 2.1,
+    "category": "mobility",
+    "duration": 5
+  },
+  {
+    "id": "mind_breath_walk_5",
+    "title": "Mindful Breath Walk",
+    "focus": "both",
+    "intensity": "low",
+    "equipment": ["none"],
+    "recoveryFit": 0.9,
+    "met": 2.2,
+    "category": "mindfulness",
+    "duration": 5
+  }
+]
