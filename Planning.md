@@ -614,6 +614,106 @@ First load <3s; re-show <300ms; 60fps; VoiceOver labels
 
 DoD: All pass
 
+# Phase 8 — Weekly Time Budget Planner (Draft)
+
+## 0) Goal (User Value)
+
+- User sets **weekly total time** or **days × time slots**.
+- Defines **purpose** (health, weight loss, endurance, etc.).
+- System proposes **optimized exercise plans** within those slots.
+- Includes **rest day suggestions** and **automatic weekly reset** (with light feedback).
+- **User does not need to choose “physical/mental/both”** — the system balances it automatically in the background.
+
+---
+
+## 1) User Flow
+
+1. **Setup**
+
+   - Input: weekly minutes OR day × time slots
+   - Purpose: 4–6 options (health / weight loss / endurance …)
+   - Can be changed anytime
+
+2. **Home**
+
+   - Header: _“This week: 45/90 min • 1 slot left”_
+   - Daily slot card: shows Today’s Plan (existing card format)
+   - If readiness low → rest/light session suggestion
+
+3. **Unfinished Slots (Hybrid Handling)**
+
+   - Step 1: Auto-slide to next day
+   - Step 2: If still undone → auto-shorten (10–15 min version)
+   - No hard carry-over beyond the week
+
+4. **Weekend**
+
+   - Automatic reset (no carry-over)
+   - Feedback: stamina gauge drop or friendly comment
+   - Next week proposal: Keep / -15m / +15m
+
+5. **Notifications**
+   - Weekly reminder only (“Let’s set your week”)
+
+---
+
+## 2) UI Elements
+
+- **Settings Screen**
+
+  - Weekly Time slider OR day/time picker
+  - Purpose selector (short, 1-line descriptions)
+
+- **Home Header**
+
+  - Weekly progress bar (e.g., 45/90 min) + 1-line comment
+
+- **Daily Slots**
+
+  - Cards with session content, rest banner, completion check
+
+- **End-of-Week Review**
+  - _“You did 60/90 min. Great! Keep 90m or try 75m next week?”_
+  - Buttons: Keep / -15m / +15m
+
+---
+
+## 3) Behavior Rules
+
+- Plan assumes **80% of user’s declared time** (buffer for real life).
+- **Hybrid unfinished handling** (slide → shorten).
+- **Rest suggestions** are non-blocking, shown with rationale (max 2/week, ≥48h apart).
+- **Weekly reset** always applies (no guilt carry-over).
+- **Daily content** auto-balances _physical / mental / both_ in the background — hidden from user.
+
+---
+
+## 4) Definition of Done
+
+- Same week & same input context ⇒ identical plan (deterministic).
+- Daily suggestions **never exceed allocated time**.
+- Unfinished slots always resolved (slide/shorten).
+- Rest suggestions appear within caps (≤2/week, 48h apart).
+- Weekly reset with light feedback (gauge or comment).
+- Notifications only at week start.
+
+---
+
+## 5) KPI (Success Metrics)
+
+1. **Weekly minutes achieved**: +25 min
+2. **Time-to-start**: -20%
+3. **Rest suggestion acceptance rate**: ≥20%
+
+---
+
+## 6) Risks & Mitigations
+
+- **Accumulation overload** → hybrid handling (slide then shorten) + weekly reset.
+- **Complex setup** → limit inputs to 2 choices (minutes OR slots).
+- **Too many purposes** → keep at 4–6, simple wording.
+- **User confusion about physical/mental** → hidden balancing done automatically.
+
 **E2E Flow (iOS)**
 
 ```css
