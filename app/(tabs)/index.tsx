@@ -1,6 +1,5 @@
 // app/(tabs)/index.tsx
-// Full updated version using Supabase only + Quick Input (FAB + Bottom Sheet)
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -9,7 +8,9 @@ import {
   Text,
   Modal,
   ScrollView,
+  Alert,
 } from 'react-native';
+
 import ImprovementTypeSelector from '@/components/ImprovementTypeSelector';
 import EmotionSelector from '@/components/EmotionSelector';
 import PhysicalPurposeSelector from '@/components/PhysicalPurposeSelector';
@@ -17,6 +18,7 @@ import TimeSelector from '@/components/TimeSelector';
 import WorkoutList from '@/components/WorkoutList';
 import WorkoutTimer from '@/components/WorkoutTimer';
 import MoodRating from '@/components/MoodRating';
+
 import {
   findMentalWorkouts,
   findPhysicalWorkouts,
@@ -24,6 +26,7 @@ import {
   calculateMentalStaminaGain,
   calculatePhysicalStaminaGain,
 } from '@/utils/workoutMatcher';
+
 import {
   getUser,
   createUser,
@@ -32,15 +35,21 @@ import {
   updateMentalStamina,
   updatePhysicalStamina,
 } from '@/utils/storage';
+
 import { EXERCISES } from '@/data/exercises';
-import { WorkoutSession, MoodLog } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { ArrowLeft } from 'lucide-react-native';
 
-// Quick Input additions
 import FABQuick from '@/components/FABQuick';
 import QuickInputSheet from '@/components/QuickInputSheet';
 
+import TwoChoicePrompt from '@/components/TwoChoicePrompt';
+import RecoveryBanner from '@/components/RecoveryBanner';
+import { shouldRecommendRecovery, type RecoverySignals } from '@/logic/recovery';
+
+import type { WorkoutSession, MoodLog } from '@/types';
+
+// ===== Choose タブ（手動選択フロー） =====
 type StepType =
   | 'improvement-type'
   | 'emotion'
@@ -49,8 +58,9 @@ type StepType =
   | 'workouts'
   | 'workout-execution';
 
-export default function HomeScreen() {
-  const [improvementType, setImprovementType] = useState<'mental' | 'physical' | 'both' | null>(null);
+export default function ChooseScreen() {
+  const [improvementType, setImprovementType] =
+    useState<'mental' | 'physical' | 'both' | null>(null);
   const [selectedEmotion, setSelectedEmotion] = useState<string | null>(null);
   const [selectedPhysicalPurpose, setSelectedPhysicalPurpose] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<number | null>(null);
@@ -61,6 +71,18 @@ export default function HomeScreen() {
   const [voicePreference, setVoicePreference] = useState<'male' | 'female'>('female');
   const isCompletedRef = useRef(false);
   const [userId, setUserId] = useState<string | null>(null);
+
+  // Recovery 判定（Choose でも表示）
+  const signals: RecoverySignals = {
+    monotony7d: 2.0,
+    strain7d: 1.25,
+    acuteLoad3d: 1.1,
+    lastHighGap: 0.6,
+    earlyStopRate: 0.0,
+    now: new Date().toISOString(),
+    history: [],
+  };
+  const recovery = shouldRecommendRecovery(signals);
 
   useEffect(() => {
     fetchSessionAndInit();
@@ -286,12 +308,26 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* QuickPlanBar は下の Bottom Sheet に移動（ここからは削除） */}
       <ScrollView
         contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {/* Recovery バナー */}
+        <RecoveryBanner
+          visible={recovery.show}
+          reason={recovery.reason}
+          onAccept={() => Alert.alert('Recover Today', 'Accepted')}
+          onDecline={() => Alert.alert('Keep Normal', 'Continue as usual')}
+        />
+
+        {/* Two-Choice（Choose でも表示） */}
+        <TwoChoicePrompt
+          onPushHarder={() => Alert.alert('Bias', 'Push harder (temp)')}
+          onTakeEasy={() => Alert.alert('Bias', 'Take it easy (temp)')}
+          autoCloseMs={3000}
+        />
+
         {currentStep === 'improvement-type' && (
           <ImprovementTypeSelector onTypeSelect={handleImprovementTypeSelect} />
         )}
