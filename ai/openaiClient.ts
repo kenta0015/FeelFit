@@ -1,52 +1,70 @@
 // ai/openaiClient.ts
+// Minimal OpenAI client for Expo/React Native (fetch-based).
+// Exports named `openai` used by ai/suggestion.ts.
 
-export type PingResult = { ok: boolean; reason?: string };
+type ChatMessage = { role: 'user' | 'system' | 'assistant'; content: string };
+type ChatCreateArgs = {
+  model: string;
+  messages: ChatMessage[];
+  temperature?: number;
+  max_tokens?: number;
+};
 
-const API = 'https://api.openai.com/v1';
+type ChatChoice = { index: number; message: { role: 'assistant'; content: string } };
+type ChatUsage = { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 
-function authHeaders() {
-  const key = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-  return {
-    Authorization: `Bearer ${key}`,
-    'Content-Type': 'application/json',
-  };
-}
+export type ChatCompletion = {
+  id: string;
+  choices: ChatChoice[];
+  usage?: ChatUsage;
+};
 
-/** Lightweight health check used at app start */
-export async function pingOpenAI(): Promise<PingResult> {
+function getApiKey(): string {
+  // Try process.env first (expo-env or babel transform), then Expo extra
+  // @ts-ignore
+  const envKey = process?.env?.OPENAI_API_KEY as string | undefined;
+  // Lazy import to avoid hard dependency if not present
+  let extraKey: string | undefined;
   try {
-    const key = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-    if (!key) return { ok: false, reason: 'missing OPENAI key' };
-
-    const res = await fetch(`${API}/models`, { headers: authHeaders() });
-    return res.ok
-      ? { ok: true }
-      : { ok: false, reason: `${res.status} ${res.statusText}` };
-  } catch (e: any) {
-    return { ok: false, reason: e?.message ?? 'network error' };
-  }
-}
-
-/** Calls OpenAI for a coaching reply */
-export async function coachWithOpenAI(prompt: string): Promise<string | null> {
-  try {
-    const key = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-    if (!key) return null;
-
-    const res = await fetch(`${API}/chat/completions`, {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        temperature: 0.7,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data?.choices?.[0]?.message?.content?.trim() ?? null;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Constants = require('expo-constants').default;
+    extraKey =
+      Constants?.expoConfig?.extra?.OPENAI_API_KEY ??
+      Constants?.manifest?.extra?.OPENAI_API_KEY;
   } catch {
-    return null;
+    // ignore
   }
+  const key = envKey || extraKey;
+  if (!key) {
+    console.warn('[openaiClient] OPENAI_API_KEY not found. Calls will fail.');
+    return '';
+  }
+  return key;
 }
+
+async function chatCompletionsCreate(args: ChatCreateArgs): Promise<ChatCompletion> {
+  const apiKey = getApiKey();
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(args),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`[openaiClient] ${res.status} ${res.statusText} ${txt}`);
+  }
+  const json = (await res.json()) as ChatCompletion;
+  return json;
+}
+
+export const openai = {
+  chat: {
+    completions: {
+      create: chatCompletionsCreate,
+    },
+  },
+};
