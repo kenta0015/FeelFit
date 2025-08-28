@@ -4,8 +4,7 @@
 
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import CoachSays from '../components/CoachSays';
-
+import CoachSays from '../../components/CoachSays'; // <-- fixed
 // Local minimal Plan/Ctx types (keep in sync with hooks/useCoachSuggestion)
 type PlanBlock = {
   id: string;
