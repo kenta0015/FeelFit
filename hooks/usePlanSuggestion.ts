@@ -1,5 +1,7 @@
 import type { Plan } from '@/types/plan';
+import { generateSuggestion } from '@/ai/suggestion';
 
+// Optional fallback plan
 const mockPlan20m: Plan = {
   title: 'Mindful Mobility + Light Cardio (20m)',
   blocks: [
@@ -17,6 +19,9 @@ export type SuggestionCtx = {
 };
 
 export function usePlanSuggestion(ctx: SuggestionCtx): { plan: Plan; isUncertainDay: boolean } {
-  const isUncertainDay = (ctx.readiness ?? 100) < 40;
-  return { plan: mockPlan20m, isUncertainDay };
+  // Call your AI module
+  const { plan, isUncertainDay } = generateSuggestion(ctx);
+
+  // Fallback if AI fails (optional)
+  return { plan: plan || mockPlan20m, isUncertainDay };
 }

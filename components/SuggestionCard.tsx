@@ -1,16 +1,19 @@
-// components/SuggestionCard.tsx
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet, FlatList } from "react-native";
 import type { Plan } from "@/types/plan";
+import { useSuggestionText } from "@/hooks/useSuggestionText";
 
 type Props = {
   plan: Plan;
+  ctx?: any; // readiness/time etc.
   onStart: (plan: Plan) => void;
   onEdit: (plan: Plan) => void;
   onRefresh: () => void;
 };
 
-export default function SuggestionCard({ plan, onStart, onEdit, onRefresh }: Props) {
+export default function SuggestionCard({ plan, ctx, onStart, onEdit, onRefresh }: Props) {
+  const aiText = useSuggestionText(plan, ctx);
+
   return (
     <View style={styles.card}>
       <Text style={styles.header}>Today’s Plan</Text>
@@ -25,8 +28,11 @@ export default function SuggestionCard({ plan, onStart, onEdit, onRefresh }: Pro
           </Text>
         )}
       />
+
       <Text style={styles.section}>
-        📌 Why this? {plan.why.join(" ")}
+        {aiText
+          ? `🤖 Coach: "${aiText}"`
+          : `📌 Why this? ${plan.why.join(" ")}`}
       </Text>
 
       <View style={styles.actions}>
@@ -43,13 +49,3 @@ export default function SuggestionCard({ plan, onStart, onEdit, onRefresh }: Pro
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  card: { backgroundColor: "#fff", padding: 16, margin: 12, borderRadius: 12, elevation: 2 },
-  header: { fontSize: 18, fontWeight: "bold", marginBottom: 8 },
-  title: { fontSize: 16, marginBottom: 8 },
-  section: { marginTop: 8, fontWeight: "600" },
-  block: { marginLeft: 12, fontSize: 14 },
-  actions: { flexDirection: "row", justifyContent: "space-between", marginTop: 12 },
-  btn: { padding: 8, backgroundColor: "#eee", borderRadius: 8 },
-});
