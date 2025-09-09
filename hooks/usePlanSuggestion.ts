@@ -3,20 +3,22 @@ import { useMemo } from 'react';
 import type { Plan } from '@/types/plan';
 import { rankExercises, buildPlan } from '@/logic/rankExercises';
 
-// 画面側から渡す最小コンテキスト（timeAvailable は未指定可）
+// Minimal ctx from screen (timeAvailable optional)
 export type SuggestionCtx = {
-  timeAvailable?: number; // 未指定なら 10/15/20/30 を試してベストを選ぶ
+  timeAvailable?: number; // if not given, choose best from 10/15/20/30
   focus?: 'mental' | 'physical' | 'both';
   emotion?: string | null;
   intensityPref?: 'low' | 'med' | 'high';
   equipment?: string[];
   constraints?: string[];
   disliked?: string[];
-  readiness?: number; // Two-Choice 用
+  readiness?: number; // for Two-Choice trigger
 };
 
-// rankExercises に渡すために null/undefined を正規化
-function normalizeCtxForRank(ctx: Required<Pick<SuggestionCtx, 'timeAvailable'>> & SuggestionCtx) {
+// normalize for ranker (fill null/undefined with safe defaults)
+function normalizeCtxForRank(
+  ctx: Required<Pick<SuggestionCtx, 'timeAvailable'>> & SuggestionCtx
+) {
   return {
     timeAvailable: ctx.timeAvailable,
     focus: ctx.focus,
@@ -25,7 +27,7 @@ function normalizeCtxForRank(ctx: Required<Pick<SuggestionCtx, 'timeAvailable'>>
     equipment: ctx.equipment ?? [],
     constraints: ctx.constraints ?? [],
     disliked: ctx.disliked ?? [],
-    // シグナルは未指定時 0 扱い（ルール側で安全）
+    // signals default 0 (safe on rules)
     streak: 0,
     sessions7d: 0,
     minutes7d: 0,
@@ -57,14 +59,16 @@ export function usePlanSuggestion(ctx: SuggestionCtx): UsePlanSuggestionResult {
   return useMemo(() => {
     const isUncertainDay = (ctx.readiness ?? 100) < 40;
 
-    // 1) 時間が指定されている → その時間で確定
+    // 1) fixed time
     if (typeof ctx.timeAvailable === 'number') {
-      const ranked = rankExercises(normalizeCtxForRank({ ...ctx, timeAvailable: ctx.timeAvailable }));
+      const ranked = rankExercises(
+        normalizeCtxForRank({ ...ctx, timeAvailable: ctx.timeAvailable })
+      );
       const fixed = buildPlan(ranked, ctx.timeAvailable);
       return { plan: fixed, recommendedTime: ctx.timeAvailable, isUncertainDay };
     }
 
-    // 2) 未指定 → 10/15/20/30 の中からベストを自動選択（同点なら短い方）
+    // 2) choose best from 10/15/20/30 (tie → shorter)
     const buckets = [10, 15, 20, 30] as const;
     let best: { plan: Plan; time: number; score: number } | null = null;
 
@@ -77,7 +81,6 @@ export function usePlanSuggestion(ctx: SuggestionCtx): UsePlanSuggestionResult {
       }
     }
 
-    // 3) 念のためのフォールバック（理論上到達しない）
     if (!best) {
       const ranked = rankExercises(normalizeCtxForRank({ ...ctx, timeAvailable: 20 }));
       const p = buildPlan(ranked, 20);

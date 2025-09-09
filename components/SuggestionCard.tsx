@@ -4,20 +4,13 @@ import type { Plan } from '@/types/plan';
 
 type Props = {
   plan: Plan;
-
-  // 推奨名
-  isUncertainDay?: boolean;
-
-  // 互換名（あればどれでも可）
-  showTwoChoice?: boolean;
-  uncertain?: boolean;
-  showPrompt?: boolean;
-
+  isUncertainDay?: boolean;        // preferred
+  showTwoChoice?: boolean;         // compat
+  uncertain?: boolean;             // compat
+  showPrompt?: boolean;            // compat
   onStart?: (plan: Plan) => void;
   onEdit?: (plan: Plan) => void;
   onRefresh?: () => void;
-
-  // 任意: Two-Choice選択通知（今回はUI確認用）
   onTwoChoiceSelect?: (choice: 'push' | 'easy') => void;
 };
 
@@ -40,12 +33,10 @@ export default function SuggestionCard({
   const [showChoice, setShowChoice] = useState<boolean>(initialUncertain);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // isUncertainDay の変化に追従（画面再訪など）
   useEffect(() => {
     setShowChoice(initialUncertain);
   }, [initialUncertain]);
 
-  // 3秒オートクローズ
   useEffect(() => {
     if (!showChoice) return;
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -142,7 +133,6 @@ const styles = StyleSheet.create({
   edit: { backgroundColor: '#f59e0b' },
   refresh: { backgroundColor: '#e5e7eb' },
   btnText: { color: '#fff', fontWeight: '700' },
-
   twoChoice: { backgroundColor: '#F3F4F6', borderRadius: 12, padding: 10, gap: 8, marginBottom: 6 },
   twoChoiceText: { color: '#111827', fontWeight: '600' },
   row: { flexDirection: 'row', gap: 8 },
