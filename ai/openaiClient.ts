@@ -1,8 +1,8 @@
 // ai/openaiClient.ts
 // Fetch-based OpenAI client for Expo/Web. Exports:
 // - openai.chat.completions.create(...)
-// - pingOpenAI(): Promise<boolean>
-// - pingOpenAIDetails(): Promise<{ ok: boolean; error?: string }>
+// - pingOpenAI(): Promise<{ ok: boolean; error?: string; reason?: string }>
+// - pingOpenAIDetails(): Promise<{ ok: boolean; error?: string; reason?: string }>
 // - coachWithOpenAI(input: string, opts?): Promise<string>
 
 type ChatMessage = { role: 'user' | 'system' | 'assistant'; content: string };
@@ -80,10 +80,10 @@ export const openai = {
 };
 
 // ---- Ping helpers ----
-export async function pingOpenAIDetails(): Promise<{ ok: boolean; error?: string }> {
+export async function pingOpenAIDetails(): Promise<{ ok: boolean; error?: string; reason?: string }> {
   try {
     const apiKey = getApiKey();
-    if (!apiKey) return { ok: false, error: 'missing_api_key' };
+    if (!apiKey) return { ok: false, error: 'missing_api_key', reason: 'missing_api_key' };
 
     const res = await fetch('https://api.openai.com/v1/models?limit=1', {
       headers: { Authorization: `Bearer ${apiKey}` },
@@ -91,17 +91,19 @@ export async function pingOpenAIDetails(): Promise<{ ok: boolean; error?: string
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      return { ok: false, error: `${res.status} ${res.statusText} ${text}`.trim() };
+      const msg = `${res.status} ${res.statusText} ${text}`.trim();
+      return { ok: false, error: msg, reason: msg };
     }
     return { ok: true };
   } catch (e: any) {
-    return { ok: false, error: String(e?.message || e) };
+    const msg = String(e?.message || e);
+    return { ok: false, error: msg, reason: msg };
   }
 }
 
-export async function pingOpenAI(): Promise<boolean> {
-  const { ok } = await pingOpenAIDetails();
-  return ok;
+// Alias: keep callers happy (returns details, not boolean)
+export async function pingOpenAI(): Promise<{ ok: boolean; error?: string; reason?: string }> {
+  return pingOpenAIDetails();
 }
 
 // ---- Simple coaching helper (compat for legacy imports) ----
