@@ -1,26 +1,38 @@
 // components/TwoChoicePrompt.tsx
-import React, { useEffect } from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
 type Props = {
-  onChoice: (bias: "harder" | "easier" | "none") => void;
+  onPushHarder: () => void;
+  onTakeEasy: () => void;
+  autoCloseMs?: number;
+  // 互換のため（親で条件付きレンダー推奨だが、型エラー回避で残す）
+  visible?: boolean;
 };
 
-export default function TwoChoicePrompt({ onChoice }: Props) {
+export default function TwoChoicePrompt({
+  onPushHarder,
+  onTakeEasy,
+  autoCloseMs = 3000,
+}: Props) {
+  const [open, setOpen] = useState(true);
+
   useEffect(() => {
-    const timer = setTimeout(() => onChoice("none"), 3000);
-    return () => clearTimeout(timer);
-  }, [onChoice]);
+    const id = setTimeout(() => setOpen(false), autoCloseMs);
+    return () => clearTimeout(id);
+  }, [autoCloseMs]);
+
+  if (!open) return null;
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.header}>How do you feel today? (auto close in 3s)</Text>
+    <View style={styles.wrap}>
+      <Text style={styles.title}>How do you feel today? (auto close in {Math.round(autoCloseMs / 1000)}s)</Text>
       <View style={styles.row}>
-        <TouchableOpacity style={styles.choice} onPress={() => onChoice("harder")}>
-          <Text>💥 Push harder</Text>
+        <TouchableOpacity style={[styles.choice, styles.left]} onPress={() => { onPushHarder(); setOpen(false); }}>
+          <Text style={styles.leftText}>💥 Push harder</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.choice} onPress={() => onChoice("easier")}>
-          <Text>🌿 Take it easy</Text>
+        <TouchableOpacity style={[styles.choice, styles.right]} onPress={() => { onTakeEasy(); setOpen(false); }}>
+          <Text style={styles.rightText}>🌿 Take it easy</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -28,8 +40,14 @@ export default function TwoChoicePrompt({ onChoice }: Props) {
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: "#fff", padding: 16, margin: 12, borderRadius: 12, elevation: 2 },
-  header: { fontSize: 16, fontWeight: "600", marginBottom: 12 },
-  row: { flexDirection: "row", justifyContent: "space-around" },
-  choice: { padding: 12, backgroundColor: "#eee", borderRadius: 8 },
+  wrap: {
+    backgroundColor: '#f3f4f6', padding: 12, borderRadius: 12, gap: 8,
+  },
+  title: { color: '#111827', fontWeight: '700' },
+  row: { flexDirection: 'row', gap: 12 },
+  choice: { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
+  left: { backgroundColor: '#fef3c7' },
+  right: { backgroundColor: '#dcfce7' },
+  leftText: { color: '#92400e', fontWeight: '700' },
+  rightText: { color: '#065f46', fontWeight: '700' },
 });

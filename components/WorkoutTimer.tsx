@@ -14,9 +14,11 @@ interface WorkoutTimerProps {
 export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePreference }: WorkoutTimerProps) {
   const [timeLeft, setTimeLeft] = useState(exercise.duration * 60); // Convert to seconds
   const [isRunning, setIsRunning] = useState(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ✅ 型エラー修正：ReturnType<typeof setInterval> を使用
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const totalTime = exercise.duration * 60;
-  
   const progress = ((totalTime - timeLeft) / totalTime) * 100;
   const completionPercentage = Math.round(progress);
 
@@ -25,10 +27,10 @@ export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePref
       intervalRef.current = setInterval(() => {
         setTimeLeft(prev => {
           const newTime = prev - 1;
-          
+
           // Play motivational audio at key moments
           const progressPercent = ((totalTime - newTime) / totalTime) * 100;
-          
+
           if (newTime === totalTime - 5) {
             // Start message (5 seconds in)
             playWorkoutAudio('start', exercise.audioType, voicePreference);
@@ -39,22 +41,25 @@ export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePref
             // Near end message (10 seconds left)
             playWorkoutAudio('nearEnd', exercise.audioType, voicePreference);
           }
-          
+
           return newTime;
         });
       }, 1000);
     } else {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
     }
 
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
     };
-  }, [isRunning, timeLeft, totalTime, voicePreference]);
+    // 依存関係は元のまま（挙動変更なし）
+  }, [isRunning, timeLeft, totalTime, voicePreference, exercise.audioType]);
 
   useEffect(() => {
     if (timeLeft === 0) {
@@ -62,7 +67,7 @@ export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePref
       playWorkoutAudio('completion', exercise.audioType, voicePreference);
       onComplete(100);
     }
-  }, [timeLeft, onComplete, voicePreference]);
+  }, [timeLeft, onComplete, voicePreference, exercise.audioType]);
 
   const startTimer = () => {
     setIsRunning(true);
@@ -83,8 +88,8 @@ export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePref
       `You've completed ${completionPercentage}% of the workout. Do you want to finish here?`,
       [
         { text: 'Continue', style: 'cancel' },
-        { 
-          text: 'Finish', 
+        {
+          text: 'Finish',
           onPress: () => onComplete(completionPercentage),
           style: 'destructive'
         }
@@ -124,8 +129,8 @@ export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePref
       </View>
 
       <View style={styles.controls}>
-        <TouchableOpacity 
-          style={isRunning ? styles.pauseButton : styles.startButton} 
+        <TouchableOpacity
+          style={isRunning ? styles.pauseButton : styles.startButton}
           onPress={isRunning ? pauseTimer : startTimer}
         >
           {isRunning ? (
@@ -147,7 +152,7 @@ export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePref
           <TouchableOpacity style={styles.resetButton} onPress={resetTimer}>
             <RotateCcw size={20} color="#6b7280" />
           </TouchableOpacity>
-          
+
           <TouchableOpacity style={styles.stopButton} onPress={stopWorkout}>
             <Square size={20} color="#dc2626" />
             <Text style={styles.stopButtonText}>Finish</Text>

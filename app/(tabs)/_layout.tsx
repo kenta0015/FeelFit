@@ -8,6 +8,7 @@ const showTest = __DEV__ || process.env.EXPO_PUBLIC_SHOW_TEST === '1';
 export default function TabLayout() {
   return (
     <Tabs
+      initialRouteName="suggestion" // ← 起動時は Suggestion を表示
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: '#6366f1',
@@ -16,12 +17,24 @@ export default function TabLayout() {
         tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
       }}
     >
+      {/* ① 一番左：AI提案タブ */}
+      <Tabs.Screen
+        name="suggestion"
+        options={{
+          title: 'Suggestion',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="sparkles-outline" color={color} size={size} />
+          ),
+        }}
+      />
+
+      {/* ② 旧 Workout → ユーザーが選ぶタブに改名 */}
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Workout',
+          title: 'Choose',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="barbell-outline" color={color} size={size} />
+            <Ionicons name="options-outline" color={color} size={size} />
           ),
         }}
       />
