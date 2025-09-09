@@ -1,6 +1,9 @@
 // ai/openaiClient.ts
-// Minimal OpenAI client for Expo/React Native (fetch-based).
-// Exports named `openai` used by ai/suggestion.ts.
+// Fetch-based OpenAI client for Expo/Web. Exports:
+// - openai.chat.completions.create(...)
+// - pingOpenAI(): Promise<boolean>
+// - pingOpenAIDetails(): Promise<{ ok: boolean; error?: string }>
+// - coachWithOpenAI(input: string, opts?): Promise<string>
 
 type ChatMessage = { role: 'user' | 'system' | 'assistant'; content: string };
 type ChatCreateArgs = {
@@ -19,29 +22,38 @@ export type ChatCompletion = {
   usage?: ChatUsage;
 };
 
+// ---- API Key loader ----
 function getApiKey(): string {
-  // Try process.env first (expo-env or babel transform), then Expo extra
   // @ts-ignore
-  const envKey = process?.env?.OPENAI_API_KEY as string | undefined;
-  // Lazy import to avoid hard dependency if not present
-  let extraKey: string | undefined;
+  const pub = (typeof process !== 'undefined' && process?.env?.EXPO_PUBLIC_OPENAI_API_KEY) as
+    | string
+    | undefined;
+  // @ts-ignore
+  const std = (typeof process !== 'undefined' && process?.env?.OPENAI_API_KEY) as
+    | string
+    | undefined;
+
+  let extra: string | undefined;
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Constants = require('expo-constants').default;
-    extraKey =
-      Constants?.expoConfig?.extra?.OPENAI_API_KEY ??
+    extra =
+      Constants?.expoConfig?.extra?.EXPO_PUBLIC_OPENAI_API_KEY ||
+      Constants?.expoConfig?.extra?.OPENAI_API_KEY ||
+      Constants?.manifest?.extra?.EXPO_PUBLIC_OPENAI_API_KEY ||
       Constants?.manifest?.extra?.OPENAI_API_KEY;
   } catch {
     // ignore
   }
-  const key = envKey || extraKey;
+
+  const key = pub || std || extra || '';
   if (!key) {
-    console.warn('[openaiClient] OPENAI_API_KEY not found. Calls will fail.');
-    return '';
+    console.warn('[openaiClient] OPENAI API key not found. Set EXPO_PUBLIC_OPENAI_API_KEY or OPENAI_API_KEY.');
   }
   return key;
 }
 
+// ---- Low-level HTTP wrapper ----
 async function chatCompletionsCreate(args: ChatCreateArgs): Promise<ChatCompletion> {
   const apiKey = getApiKey();
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -52,13 +64,11 @@ async function chatCompletionsCreate(args: ChatCreateArgs): Promise<ChatCompleti
     },
     body: JSON.stringify(args),
   });
-
   if (!res.ok) {
     const txt = await res.text().catch(() => '');
     throw new Error(`[openaiClient] ${res.status} ${res.statusText} ${txt}`);
   }
-  const json = (await res.json()) as ChatCompletion;
-  return json;
+  return (await res.json()) as ChatCompletion;
 }
 
 export const openai = {
@@ -68,3 +78,54 @@ export const openai = {
     },
   },
 };
+
+// ---- Ping helpers ----
+export async function pingOpenAIDetails(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const apiKey = getApiKey();
+    if (!apiKey) return { ok: false, error: 'missing_api_key' };
+
+    const res = await fetch('https://api.openai.com/v1/models?limit=1', {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      return { ok: false, error: `${res.status} ${res.statusText} ${text}`.trim() };
+    }
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+export async function pingOpenAI(): Promise<boolean> {
+  const { ok } = await pingOpenAIDetails();
+  return ok;
+}
+
+// ---- Simple coaching helper (compat for legacy imports) ----
+export async function coachWithOpenAI(
+  input: string,
+  opts?: { model?: string; temperature?: number; max_tokens?: number; system?: string }
+): Promise<string> {
+  const model = opts?.model ?? 'gpt-4o-mini';
+  const temperature = opts?.temperature ?? 0.6;
+  const max_tokens = opts?.max_tokens ?? 160;
+  const system =
+    opts?.system ??
+    'You are a concise, supportive fitness coach. Keep output to 2–4 sentences, no emojis.';
+
+  const resp = await openai.chat.completions.create({
+    model,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: input },
+    ],
+    temperature,
+    max_tokens,
+  });
+
+  const text = resp?.choices?.[0]?.message?.content?.trim() || '';
+  return text;
+}
