@@ -384,3 +384,8 @@ const styles = StyleSheet.create({
   resetButtonText: { color: '#6b7280', fontSize: 14, fontWeight: '600' },
   spacer: { width: 40 },
 });
+
+import TempTest from '../dev/TempTest'; // adjust path if needed
+
+// inside your Tab.Navigator
+<Tab.Screen name="TempTest" component={TempTest} />
