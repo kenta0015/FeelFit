@@ -8,139 +8,208 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  Platform,
 } from 'react-native';
 
-import SuggestionCard from '@/components/SuggestionCard';
-import TwoChoicePrompt from '@/components/TwoChoicePrompt';
-import RecoveryBanner from '@/components/RecoveryBanner';
-
-import { usePlanSuggestion } from '@/hooks/usePlanSuggestion';
-import { shouldRecommendRecovery, type RecoverySignals } from '@/logic/recovery';
 import type { Plan } from '@/types/plan';
+import SuggestionCard from '@/components/SuggestionCard';
+import RecoveryBanner from '@/components/RecoveryBanner';
+import { usePlanSuggestion, type SuggestionCtx } from '@/hooks/usePlanSuggestion';
+import { shouldRecommendRecovery } from '@/logic/recovery';
 
-export default function SuggestionScreen() {
-  // 時間チップ（Auto=未指定）
-  const chips = [10, 15, 20, 30] as const;
-  const [manualTime, setManualTime] = useState<number | null>(null);
+/**
+ * Phase 4.1A — Wire up Suggestion tab with usePlanSuggestion + SuggestionCard.
+ * - Minimal UI
+ * - Lightweight console logging
+ * - Web alert fallback
+ */
 
-  // プラン計算（A 実装が入っていれば本番ロジック）
-  const { plan, recommendedTime } = usePlanSuggestion({
-    timeAvailable: manualTime ?? undefined, // Auto のとき undefined
-  });
+const TIME_CHOICES = [10, 15, 20, 30];
 
-  // Recovery 判定（今は固定シグナル）
-  const signals: RecoverySignals = useMemo(
+function showAlert(title: string, message: string) {
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.alert === 'function') {
+    window.alert(`${title}\n\n${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+}
+
+export default function SuggestionTab() {
+  // --- Local UI state
+  const [manualTime, setManualTime] = useState<number | undefined>(undefined);
+  const [refreshNonce, setRefreshNonce] = useState(0);
+
+  // --- Context for the suggestion hook
+  const ctx: SuggestionCtx = useMemo(() => {
+    return {
+      timeAvailable: manualTime, // undefined → hook chooses the best time
+      focus: 'both',
+      emotion: null,
+      intensityPref: undefined,
+      equipment: [],
+      constraints: [],
+      disliked: [],
+      readiness: undefined,
+    };
+  }, [manualTime]);
+
+  // --- Compute plan suggestion
+  const { plan, recommendedTime, isUncertainDay } = usePlanSuggestion(ctx);
+
+  // --- Active time (manual override wins)
+  const activeTime = manualTime ?? recommendedTime;
+
+  // --- Recovery recommendation（ダミー信号; 必要に応じて実データに置換）
+  const signals = useMemo(
     () => ({
-      monotony7d: 2.2,
-      strain7d: 1.3,
-      acuteLoad3d: 1.1,
+      monotony7d: 1.2,
+      strain7d: 1.1,
+      strainP75: 1.6,
+      acuteLoad3d: 1.0,
       lastHighGap: 0.5,
       earlyStopRate: 0.0,
       now: new Date().toISOString(),
       history: [],
     }),
-    [],
+    [refreshNonce]
   );
   const recovery = shouldRecommendRecovery(signals);
 
-  const activeTime = manualTime ?? recommendedTime;
-
-  const onStart = () => {
-    const first = plan.blocks[0];
-    if (!first) return Alert.alert('No plan', 'No blocks available');
-    Alert.alert('Start', `Start "${first.title}" (${first.duration}m)`);
+  // --- Logging（consoleのみ）
+  const logEvent = (kind: string, extra?: Record<string, unknown>) => {
+    const payload = {
+      t: new Date().toISOString(),
+      kind,
+      recommendedTime,
+      manualTime,
+      activeTime,
+      blocks: plan?.blocks?.length ?? 0,
+      ...(extra || {}),
+    };
+    // eslint-disable-next-line no-console
+    console.log('[SuggestionTab]', payload);
   };
 
-  const onEdit = () => Alert.alert('Edit', 'Open EditPlanSheet (TBD)');
-  const onRefresh = () => Alert.alert('Refresh', 'Recompute plan (TBD)');
+  const onStart = (p: Plan) => {
+    const first = p.blocks[0];
+    if (!first) return showAlert('No plan', 'No blocks available');
+    logEvent('start', { firstBlock: first?.title, title: p.title });
+    showAlert('Start', `Starting: ${p.title} — ${activeTime} min`);
+    // TODO: navigate to workout player/timer when available
+  };
+
+  const onEdit = (p: Plan) => {
+    logEvent('edit', { title: p.title });
+    showAlert('Edit', 'Plan editor is not implemented yet.');
+  };
+
+  const onRefresh = () => {
+    logEvent('refresh');
+    setRefreshNonce((n) => n + 1);
+  };
+
+  const selectTime = (t: number) => {
+    setManualTime(t);
+    logEvent('select_time', { t });
+  };
 
   return (
-    <SafeAreaView style={styles.root}>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Recovery */}
-        <RecoveryBanner
-          visible={recovery.show}
-          reason={recovery.reason}
-          onAccept={() => Alert.alert('Recover Today', 'Accepted')}
-          onDecline={() => Alert.alert('Keep Normal', 'Continue as usual')}
-        />
+    <SafeAreaView style={styles.safe}>
+      <ScrollView contentContainerStyle={styles.container}>
+        {/* Recovery recommendation banner */}
+        {recovery?.show ? (
+          <View style={styles.section}>
+            {/* RecoveryBanner は `type` prop を受け取りません */}
+            <RecoveryBanner show reason={recovery.reason} />
+          </View>
+        ) : null}
 
-        {/* Two-Choice（ここでのみ表示／3秒で自動クローズ） */}
-        <TwoChoicePrompt
-          onPushHarder={() => Alert.alert('Bias', 'Push harder (temp)')}
-          onTakeEasy={() => Alert.alert('Bias', 'Take it easy (temp)')}
-          autoCloseMs={3000}
-        />
-
-        {/* Time chips */}
-        <View style={styles.row}>
-          {chips.map((t) => (
-            <TouchableOpacity
-              key={t}
-              style={[styles.chip, activeTime === t && styles.chipActive]}
-              onPress={() => setManualTime(t)}
-            >
-              <Text style={[styles.chipText, activeTime === t && styles.chipTextActive]}>
-                {t}m
-              </Text>
-            </TouchableOpacity>
-          ))}
-          <TouchableOpacity
-            style={[styles.chip, manualTime == null && styles.chipActive]}
-            onPress={() => setManualTime(null)}
-          >
-            <Text style={[styles.chipText, manualTime == null && styles.chipTextActive]}>
-              Auto
-            </Text>
+        {/* Header */}
+        <View style={[styles.section, styles.headerRow]}>
+          <Text style={styles.title}>Today’s Suggestion</Text>
+          <TouchableOpacity onPress={onRefresh} style={styles.refreshBtn}>
+            <Text style={styles.refreshText}>Refresh</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Today’s Plan（SuggestionCard 側では Two-Choice を表示しない） */}
-        <Text style={styles.sectionTitle}>Today’s Plan</Text>
-        <SuggestionCard
-          plan={plan as Plan}
-          // isUncertainDay を渡すと内部で Two-Choice が出る実装なら、false か未指定にして抑止
-          isUncertainDay={false}
-          onStart={onStart}
-          onEdit={onEdit}
-          onRefresh={onRefresh}
-        />
+        {/* Time chips */}
+        <View style={[styles.section, styles.chipsRow]}>
+          {TIME_CHOICES.map((t) => {
+            const active = activeTime === t;
+            return (
+              <TouchableOpacity
+                key={t}
+                style={[styles.chip, active && styles.chipActive]}
+                onPress={() => selectTime(t)}
+              >
+                <Text style={[styles.chipText, active && styles.chipTextActive]}>{t}m</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* SuggestionCard (main) */}
+        <View style={styles.section}>
+          <SuggestionCard
+            plan={plan as Plan}
+            isUncertainDay={!!isUncertainDay}
+            onStart={onStart}
+            onEdit={onEdit}
+            onRefresh={onRefresh}
+            onTwoChoiceSelect={(choice) => logEvent('two_choice', { choice })}
+          />
+        </View>
+
+        {/* Why / meta (simple readout for dev) */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Why this plan</Text>
+          {(plan?.why ?? []).map((w, i) => (
+            <Text key={i} style={styles.whyLine}>
+              • {w}
+            </Text>
+          ))}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#fff' },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 24,
+  safe: { flex: 1, backgroundColor: '#fff' },
+  container: { padding: 16 },
+  section: { marginBottom: 16 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  title: { fontSize: 20, fontWeight: '800', color: '#111827' },
+  refreshBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#eef2ff',
     borderWidth: 1,
-    borderColor: '#d1d5db',
+    borderColor: '#c7d2fe',
+  },
+  refreshText: { color: '#4f46e5', fontWeight: '700' },
+
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap' },
+  chip: {
+    marginRight: 8,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
     backgroundColor: '#fff',
   },
-  chipActive: {
-    borderColor: '#6366f1',
-    backgroundColor: '#eef2ff',
-  },
+  chipActive: { borderColor: '#6366f1', backgroundColor: '#eef2ff' },
   chipText: { color: '#374151', fontWeight: '700' },
   chipTextActive: { color: '#4f46e5' },
+
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
-    marginTop: 16,
     marginBottom: 8,
     color: '#111827',
   },
+  whyLine: { color: '#374151', lineHeight: 20 },
 });
