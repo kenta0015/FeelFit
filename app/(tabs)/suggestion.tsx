@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  Platform,
 } from 'react-native';
 
 import type { Plan } from '@/types/plan';
@@ -18,12 +19,20 @@ import { shouldRecommendRecovery } from '@/logic/recovery';
 
 /**
  * Phase 4.1A — Wire up Suggestion tab with usePlanSuggestion + SuggestionCard.
- * - Minimal UI adjustments
- * - Lightweight logging (budget/cache placeholders)
- * - Coach Debug remains dev-only elsewhere
+ * - Minimal UI
+ * - Lightweight console logging
+ * - Web alert fallback
  */
 
 const TIME_CHOICES = [10, 15, 20, 30];
+
+function showAlert(title: string, message: string) {
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.alert === 'function') {
+    window.alert(`${title}\n\n${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+}
 
 export default function SuggestionTab() {
   // --- Local UI state
@@ -50,7 +59,7 @@ export default function SuggestionTab() {
   // --- Active time (manual override wins)
   const activeTime = manualTime ?? recommendedTime;
 
-  // --- Recovery recommendation (placeholder signals; replace with real once available)
+  // --- Recovery recommendation（ダミー信号; 必要に応じて実データに置換）
   const signals = useMemo(
     () => ({
       monotony7d: 1.2,
@@ -66,7 +75,7 @@ export default function SuggestionTab() {
   );
   const recovery = shouldRecommendRecovery(signals);
 
-  // --- Logging (minimal; replace with real budget/cache metrics if exposed)
+  // --- Logging（consoleのみ）
   const logEvent = (kind: string, extra?: Record<string, unknown>) => {
     const payload = {
       t: new Date().toISOString(),
@@ -83,15 +92,15 @@ export default function SuggestionTab() {
 
   const onStart = (p: Plan) => {
     const first = p.blocks[0];
-    if (!first) return Alert.alert('No plan', 'No blocks available');
-    logEvent('start', { firstBlock: first?.title });
-    Alert.alert('Start', `Starting: ${p.title} — ${activeTime} min`);
+    if (!first) return showAlert('No plan', 'No blocks available');
+    logEvent('start', { firstBlock: first?.title, title: p.title });
+    showAlert('Start', `Starting: ${p.title} — ${activeTime} min`);
     // TODO: navigate to workout player/timer when available
   };
 
   const onEdit = (p: Plan) => {
-    logEvent('edit', { plan: p.title });
-    Alert.alert('Edit', 'Plan editor is not implemented yet.');
+    logEvent('edit', { title: p.title });
+    showAlert('Edit', 'Plan editor is not implemented yet.');
   };
 
   const onRefresh = () => {
@@ -110,7 +119,7 @@ export default function SuggestionTab() {
         {/* Recovery recommendation banner */}
         {recovery?.show ? (
           <View style={styles.section}>
-            {/* RecoveryBanner does NOT accept `type`. Pass `show`/`reason` only. */}
+            {/* RecoveryBanner は `type` prop を受け取りません */}
             <RecoveryBanner show reason={recovery.reason} />
           </View>
         ) : null}
