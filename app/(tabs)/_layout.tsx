@@ -2,6 +2,7 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import TempTest from '../dev/TempTest'; // <-- added import
 
 const showTest = __DEV__ || process.env.EXPO_PUBLIC_SHOW_TEST === '1';
 
@@ -79,11 +80,13 @@ export default function TabLayout() {
         }}
       />
 
+      {/* Phase 4 Test Tab */}
       {showTest && (
         <Tabs.Screen
-          name="workout"
+          name="TempTest"
+          component={TempTest} // <-- your test screen
           options={{
-            title: 'Workout (Test)',
+            title: 'Phase4 Test',
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="barbell-outline" color={color} size={size} />
             ),
