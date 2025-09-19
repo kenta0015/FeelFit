@@ -1,10 +1,4 @@
-// Web stub: no-op mixer so web export succeeds.
-export type MixerState = {
-  isReady: boolean;
-  isPlaying: boolean;
-  ducking: boolean;
-  bpmTier: number;
-};
+﻿export type MixerState = { isReady: boolean; isPlaying: boolean; ducking: boolean; bpmTier: number; };
 
 export function useAudioMixer(): {
   state: MixerState;
@@ -23,5 +17,4 @@ export function useAudioMixer(): {
     setBpmTier: () => {},
   };
 }
-
 export default useAudioMixer;
