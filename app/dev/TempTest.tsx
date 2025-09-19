@@ -1,4 +1,4 @@
-// app/dev/TempTest.tsx
+﻿// app/dev/TempTest.tsx
 import React from 'react';
 import { View, Text, Button, Alert } from 'react-native';
 
