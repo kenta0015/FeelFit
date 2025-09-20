@@ -2,11 +2,11 @@
 import React from 'react';
 import { View, Text, Button, Alert } from 'react-native';
 
-// IMPORTANT: use relative imports (Vercel web export doesn't resolve "@/")
-import { useAudioMixer } from '../../hooks/useAudioMixer';
-import { useVoiceCommands } from '../../hooks/useVoiceCommands';
+// Use relative imports (no "@/")
+import useAudioMixer from '../../hooks/useAudioMixer';
+import useVoiceCommands from '../../hooks/useVoiceCommands';
 
-// Minimal temp screen to exercise mixer/commands without bundling assets on web.
+// Web-safe: do NOT require any asset files here.
 export default function TempTest() {
   const mixer = useAudioMixer();
   const vc = useVoiceCommands();
@@ -59,7 +59,7 @@ export default function TempTest() {
       </View>
 
       <Text style={{ color: '#6b7280' }}>
-        Note: This page uses web-safe stubs; native implementation will replace them on devices.
+        Web-safe stub screen: no local audio files required.
       </Text>
     </View>
   );

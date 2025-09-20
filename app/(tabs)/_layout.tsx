@@ -84,7 +84,7 @@ export default function TabLayout() {
       {showTest && (
         <Tabs.Screen
           name="TempTest"
-          component={TempTest} // <-- your test screen
+          
           options={{
             title: 'Phase4 Test',
             tabBarIcon: ({ color, size }) => (
