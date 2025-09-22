@@ -475,6 +475,30 @@ Files: audio/VoiceIntents.ts, components/PTTButton.tsx
 
 DoD: ≥95% success; <300ms response（cached）
 
+## Status – Phase 4.3 (Completed)
+
+- Micro commands: Pause / Resume / Skip / Time / Slower / Faster wired.
+- Auto ducking on TTS (WebAudio + GainNode). Restore after speech.
+- Mixer is global singleton; state sync across screens.
+- `bpmTier` sync (UI tier only; no realtime time-stretch yet).
+- Dev tabs lazy; update-depth loop fixed. TTS falls back to Web Speech if ElevenLabs error.
+
+### Verification
+
+- /dev/mixer-test: SET TRACKS → PLAY → VOICE START/END → Tier 90/110/130/150 updates `bpmTier`.
+- /dev/micro-test: each press speaks + duck→restore; Slower/Faster/Tempo buttons update `bpmTier`.
+- /dev/interval-timer-test: Pause/Resume/Skip/Time reflect and speak with ducking.
+
+### Known Limitations (carry to next phase)
+
+- `bpmTier` is a display/control tier only; actual tempo/time-stretch is not applied yet.
+
+### Next (Phase 4.4 – proposals)
+
+1. Implement realtime tempo change (AudioWorklet + WSOLA/time-stretch).
+2. Speech queue + eased duck transitions.
+3. Persist TTS cache (IndexedDB).
+
 **Workout Player**
 
 ```mathematica
