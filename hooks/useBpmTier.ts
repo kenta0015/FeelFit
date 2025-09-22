@@ -3,85 +3,87 @@ import { useCallback, useEffect, useRef } from "react";
 import { useAudioMixer } from "./useAudioMixer";
 
 type Options = {
-  min?: number;
-  max?: number;
-  step?: number;
-  rampMs?: number;
-  tickMs?: number;
+  min?: number;   // default 70
+  max?: number;   // default 150
+  step?: number;  // default 5
+  rampMs?: number; // default 600 (UI ramp)
+  tickMs?: number; // default 60
 };
 
+function clamp(n: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, n));
+}
+
 export function useBpmTier(opts: Options = {}) {
-  const {
-    min = 70,
-    max = 150,
-    step = 5,
-    rampMs = 600,
-    tickMs = 60,
-  } = opts;
+  const min = opts.min ?? 70;
+  const max = opts.max ?? 150;
+  const step = opts.step ?? 5;
+  const rampMs = opts.rampMs ?? 600;
+  const tickMs = opts.tickMs ?? 60;
 
   const mixer = useAudioMixer();
-  const timerRef = useRef<NodeJS.Timer | number | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const timerRef = useRef<number | null>(null);
 
-  const clamp = useCallback(
-    (v: number) => Math.max(min, Math.min(max, Math.round(v))),
-    [min, max]
-  );
-
-  const cancel = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current as number);
-      timerRef.current = null;
-    }
+  // always cancel ramp on unmount
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, []);
 
-  const setImmediateTier = useCallback(
-    (tier: number) => {
-      mixer.setBpmTier(clamp(tier));
+  const setTier = useCallback(
+    (t: number) => {
+      const next = clamp(Math.round(t), min, max);
+      mixer.setBpmTier(next); // ← グローバルへ即時反映（全画面同期）
     },
-    [mixer, clamp]
+    [mixer, min, max]
   );
+
+  const slower = useCallback(() => {
+    setTier((mixer.state.bpmTier ?? 110) - step);
+  }, [mixer.state.bpmTier, setTier, step]);
+
+  const faster = useCallback(() => {
+    setTier((mixer.state.bpmTier ?? 110) + step);
+  }, [mixer.state.bpmTier, setTier, step]);
 
   const rampTo = useCallback(
     (target: number) => {
-      cancel();
-      const start = mixer.state.bpmTier ?? Math.round((min + max) / 2);
-      const end = clamp(target);
+      // cancel any previous ramp
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
+
+      const start = mixer.state.bpmTier ?? 110;
+      const end = clamp(Math.round(target), min, max);
       if (start === end) return;
 
+      // simple linear ramp using setInterval (avoid RAF tight loops)
+      const delta = end - start;
       const steps = Math.max(1, Math.round(rampMs / tickMs));
       let i = 0;
-
-      timerRef.current = setInterval(() => {
+      timerRef.current = window.setInterval(() => {
         i += 1;
         const t = i / steps;
-        const v = Math.round(start + (end - start) * t);
-        mixer.setBpmTier(clamp(v));
-        if (i >= steps) cancel();
+        const val = Math.round(start + delta * t);
+        setTier(val);
+        if (i >= steps) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          timerRef.current = null;
+          setTier(end);
+        }
       }, tickMs);
     },
-    [mixer, clamp, cancel, rampMs, tickMs, min, max]
+    [mixer.state.bpmTier, min, max, rampMs, tickMs, setTier]
   );
-
-  const nudge = useCallback(
-    (dir: -1 | 1) => {
-      const current = mixer.state.bpmTier ?? Math.round((min + max) / 2);
-      rampTo(current + dir * step);
-    },
-    [mixer.state.bpmTier, rampTo, step, min, max]
-  );
-
-  useEffect(() => () => cancel(), [cancel]);
 
   return {
     bpmTier: mixer.state.bpmTier,
-    isPlayingA: mixer.state.isPlayingA,
-    ducking: mixer.state.ducking,
-    volumeA: mixer.state.volumeA,
-    setImmediateTier,
-    rampTo,
-    slower: () => nudge(-1),
-    faster: () => nudge(1),
-    clamp,
     range: { min, max, step },
+    setTier,
+    slower,
+    faster,
+    rampTo,
   };
 }
