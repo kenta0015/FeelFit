@@ -1,4 +1,5 @@
 // app/(tabs)/index.tsx
+
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -384,3 +385,6 @@ const styles = StyleSheet.create({
   resetButtonText: { color: '#6b7280', fontSize: 14, fontWeight: '600' },
   spacer: { width: 40 },
 });
+
+
+
