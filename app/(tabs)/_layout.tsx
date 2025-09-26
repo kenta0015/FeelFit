@@ -2,14 +2,14 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import TempTest from '../dev/TempTest'; // <-- added import
+import TempTest from '../dev/TempTest'; // <-- exists only when showTest
 
 const showTest = __DEV__ || process.env.EXPO_PUBLIC_SHOW_TEST === '1';
 
 export default function TabLayout() {
   return (
     <Tabs
-      initialRouteName="suggestion" // ← 起動時は Suggestion を表示
+      initialRouteName="suggestion" // Show Suggestion on launch
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: '#6366f1',
@@ -18,7 +18,7 @@ export default function TabLayout() {
         tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
       }}
     >
-      {/* ① 一番左：AI提案タブ */}
+      {/* 1) AI suggestion tab (leftmost) */}
       <Tabs.Screen
         name="suggestion"
         options={{
@@ -29,7 +29,7 @@ export default function TabLayout() {
         }}
       />
 
-      {/* ② 旧 Workout → ユーザーが選ぶタブに改名 */}
+      {/* 2) Choose tab (formerly Workout) */}
       <Tabs.Screen
         name="index"
         options={{
@@ -60,6 +60,17 @@ export default function TabLayout() {
         }}
       />
 
+      {/* NEW: Player HUD tab (Phase 3) */}
+      <Tabs.Screen
+        name="player"
+        options={{
+          title: 'Player',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="play-circle-outline" color={color} size={size} />
+          ),
+        }}
+      />
+
       <Tabs.Screen
         name="profile"
         options={{
@@ -80,11 +91,10 @@ export default function TabLayout() {
         }}
       />
 
-      {/* Phase 4 Test Tab */}
+      {/* Phase 4 Test Tab (dev only) */}
       {showTest && (
         <Tabs.Screen
           name="TempTest"
-          
           options={{
             title: 'Phase4 Test',
             tabBarIcon: ({ color, size }) => (
