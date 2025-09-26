@@ -1,8 +1,8 @@
 // app/dev/mixer-test.tsx
-// Minimal mixer test screen (web-first).
+// Minimal mixer test screen (web-first) + Hard Reset.
 // - Uses hooks/useAudioMixer.web to verify playback & voice ducking.
-// - Adds navigation buttons to open the Player HUD tab.
-// - Open via: http://localhost:8081/dev/mixer-test
+// - Adds navigation to Player HUD tab.
+// - "Hard Reset": stop voice/mixer, clear LS keys, and reload.
 
 import React, { useMemo, useState } from "react";
 import {
@@ -14,16 +14,24 @@ import {
   StyleSheet,
   Switch,
   Platform,
+  Alert,
 } from "react-native";
-import { Volume2, Play, Pause, Square, Shuffle, Music2, Mic, ArrowRight } from "lucide-react-native";
+import { Volume2, Play, Pause, Square, Shuffle, Music2, Mic, ArrowRight, RotateCcw } from "lucide-react-native";
 import { useAudioMixer } from "@/hooks/useAudioMixer.web";
 import { emitFeelFit } from "@/utils/feelFitEvents";
+import { stopAudio } from "@/utils/audio";
 import { router } from "expo-router";
 
 export default function MixerTest() {
   const mixer = useAudioMixer();
-  const [input, setInput] = useState<string>("song1, song2"); // ids or URLs (comma separated)
-  const [shuffle, setShuffle] = useState<boolean>(false);
+  const [input, setInput] = useState<string>("song1, song2");
+  const [shuffle, setShuffle] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("healing.shuffle.v1") === "true";
+    } catch {
+      return false;
+    }
+  });
   const [vol, setVol] = useState<number>(mixer.state.volumeA);
 
   const tracks = useMemo(
@@ -62,8 +70,40 @@ export default function MixerTest() {
 
   const openPlayerHere = () => router.push("/(tabs)/player");
   const openPlayerNewTab = () => {
-    if (typeof window !== "undefined") {
-      window.open("/(tabs)/player", "_blank");
+    if (typeof window !== "undefined") window.open("/(tabs)/player", "_blank");
+  };
+
+  const hardReset = () => {
+    const doReset = () => {
+      try {
+        // Stop voice + mixer
+        stopAudio();
+        mixer.stop();
+        mixer.setTracks({ tracks: [], shuffle: false });
+      } catch {}
+      // Clear localStorage keys
+      const KEYS = [
+        "mixer.volumeA.v1",
+        "healing.selection.v1",
+        "healing.shuffle.v1",
+        "tts.style.v1",
+        "tts.gender.v1",
+        "tts.voiceId.v1",
+      ];
+      try {
+        KEYS.forEach((k) => localStorage.removeItem(k));
+      } catch {}
+      // Reload to ensure clean state
+      if (typeof window !== "undefined") setTimeout(() => window.location.reload(), 200);
+    };
+
+    if (Platform.OS === "web") {
+      doReset();
+    } else {
+      Alert.alert("Hard Reset", "Clear saved settings and stop playback?", [
+        { text: "Cancel", style: "cancel" },
+        { text: "OK", style: "destructive", onPress: doReset },
+      ]);
     }
   };
 
@@ -175,6 +215,17 @@ export default function MixerTest() {
           Volume: <Text style={styles.bold}>{mixer.state.volumeA}</Text>
         </Text>
       </View>
+
+      <View style={styles.card}>
+        <Text style={styles.label}>Maintenance</Text>
+        <View style={styles.btnRow}>
+          <TouchableOpacity style={[styles.btn, styles.danger]} onPress={hardReset}>
+            <RotateCcw size={18} color="#fff" />
+            <Text style={styles.btnText}>Hard Reset</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.help}>Stops voice/mixer, clears saved prefs, then reloads.</Text>
+      </View>
     </SafeAreaView>
   );
 }
@@ -228,4 +279,5 @@ const styles = StyleSheet.create({
     fontFamily: Platform.select({ web: "ui-monospace, Menlo, monospace", default: "monospace" }),
     color: "#374151",
   },
+  help: { fontSize: 12, color: "#6b7280" },
 });

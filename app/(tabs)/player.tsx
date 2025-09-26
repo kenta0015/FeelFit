@@ -1,16 +1,22 @@
 // app/(tabs)/player.tsx
-// Minimal Player HUD tab + Voice Style selector (Phase5).
-// - Listens to feelFit:* custom events and mirrors Engine state if present.
-// - Emits control events with detail.origin = "player".
-// - Adds "Voice Style" UI (style/gender pick + Preview) with localStorage persistence.
-// - Non-breaking: works even if Engine/Mixer are not implemented yet.
+// Player HUD + Voice Style selector + Provider/Voice display + Mini BGM controls
+// - Scrollable with bottom inset (tab barに隠れない)
+// - Lazy-init web mixer so "Start BGM" works without visiting /dev/mixer-test
 
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
-import { ALL_STYLES, DEFAULT_STYLE, type VoiceStyle, type Gender } from "@/utils/voiceProfiles";
+import { ScrollView, View, Text, Pressable, StyleSheet, Platform } from "react-native";
+import * as Clipboard from "expo-clipboard";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  ALL_STYLES,
+  DEFAULT_STYLE,
+  type VoiceStyle,
+  type Gender,
+  toElevenPayload,
+} from "@/utils/voiceProfiles";
 import { playWorkoutAudio, stopAudio } from "@/utils/audio";
 
-// ---- Types (loose, to avoid coupling) ----
+// ---- Types (loose) ----
 type FeelFitEngine = {
   start?: (opts: { totalSec?: number }) => void;
   pause?: () => void;
@@ -23,19 +29,28 @@ type FeelFitEngine = {
   isRunning?: () => boolean | undefined;
 };
 
-declare global {
-  // eslint-disable-next-line no-var
-  var __feelFit: {
-    engine?: FeelFitEngine;
-  } | undefined;
-}
-
-// ---- Safe window in RN (web only has window; native still okay via globalThis) ----
-const getWin = (): any => {
-  if (typeof window !== "undefined") return window;
-  return undefined;
+type MiniMixer = {
+  play: () => Promise<void> | void;
+  pause: () => void;
+  stop: () => void;
+  next: () => void;
+  prev: () => void;
+  setTracks: (arg: { tracks: string[]; shuffle?: boolean }) => Promise<void> | void;
+  setVolumeA: (n: number) => void;
+  getCurrentTrackUri: () => string | null;
+  state: { isReady: boolean; isPlayingA: boolean; volumeA: number; ducking: boolean };
+  tracks?: string[];
 };
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __feelFit: { engine?: FeelFitEngine } | undefined;
+  // eslint-disable-next-line no-var
+  var __ffMixer: MiniMixer | undefined;
+}
+
+// ---- utils ----
+const getWin = (): any => (typeof window !== "undefined" ? window : undefined);
 const dispatchFeelFit = (
   type: "workout-start" | "workout-pause" | "workout-resume" | "workout-finish",
   detail?: Record<string, any>
@@ -47,23 +62,31 @@ const dispatchFeelFit = (
     w.dispatchEvent(new w.CustomEvent(evtName, { detail: payload }));
   }
 };
-
-// ---- Format helpers ----
 const fmt = (n?: number) => {
   if (n == null || !isFinite(n)) return "--:--";
   const s = Math.max(0, Math.floor(n));
-  const mm = Math.floor(s / 60)
-    .toString()
-    .padStart(2, "0");
-  const ss = Math.floor(s % 60)
-    .toString()
-    .padStart(2, "0");
+  const mm = Math.floor(s / 60).toString().padStart(2, "0");
+  const ss = Math.floor(s % 60).toString().padStart(2, "0");
   return `${mm}:${ss}`;
 };
-
 const getEngine = (): FeelFitEngine | undefined => globalThis.__feelFit?.engine;
+const getMixer = (): MiniMixer | undefined => (globalThis as any).__ffMixer;
 
-// ---- Small storage (web localStorage; no-op otherwise) ----
+// Lazy init mixer on web (imports the singleton module once)
+async function ensureMixer(): Promise<MiniMixer | undefined> {
+  if (Platform.OS !== "web") return undefined;
+  let m = getMixer();
+  if (!m) {
+    try {
+      await import("@/hooks/useAudioMixer.web");
+      m = getMixer();
+    } catch {
+      // ignore
+    }
+  }
+  return m;
+}
+
 const kv = {
   get(key: string): string | null {
     try {
@@ -78,26 +101,55 @@ const kv = {
   },
 };
 
+// ---- Style→content routing ----
+const styleToContent = (s: VoiceStyle): "healing" | "motivational" => {
+  if (s === "Calm" || s === "Gentle" || s === "Focus" || s === "Neutral") return "healing";
+  return "motivational";
+};
+
+// ---- Provider / voice helpers ----
+const getEnvKey = (): string | undefined =>
+  (process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY as string | undefined) ||
+  (process.env.ELEVENLABS_API_KEY as string | undefined);
+const getSavedVoiceIdOverride = (): string | undefined => {
+  try {
+    if (typeof localStorage !== "undefined") {
+      const v = localStorage.getItem("tts.voiceId.v1");
+      if (v && v.trim()) return v.trim();
+    }
+  } catch {}
+  return undefined;
+};
+
 // ---- Component ----
 export default function PlayerTab() {
+  const insets = useSafeAreaInsets();
+  const bottomPad = Math.max(24, (insets?.bottom ?? 0) + (Platform.OS === "web" ? 96 : 72));
+
   const [remaining, setRemaining] = useState<number | undefined>(undefined);
   const [total, setTotal] = useState<number | undefined>(undefined);
   const [running, setRunning] = useState<boolean | undefined>(undefined);
   const [lastEvent, setLastEvent] = useState<string>("(none)");
+  const [speaking, setSpeaking] = useState<boolean>(false);
+  const [copiedAt, setCopiedAt] = useState<number | null>(null);
 
   // Voice prefs
   const [style, setStyle] = useState<VoiceStyle>(() => (kv.get("tts.style.v1") as VoiceStyle) || DEFAULT_STYLE);
   const [gender, setGender] = useState<Gender>(() => ((kv.get("tts.gender.v1") as Gender) || "female"));
 
-  // Persist voice prefs
-  useEffect(() => {
-    kv.set("tts.style.v1", style);
-  }, [style]);
-  useEffect(() => {
-    kv.set("tts.gender.v1", gender);
-  }, [gender]);
+  // Provider capability / current voiceId
+  const neuralCapable = Platform.OS === "web" && !!getEnvKey();
+  const voiceOverride = getSavedVoiceIdOverride();
+  const currentVoiceId = useMemo(
+    () => (neuralCapable ? toElevenPayload(style, gender, voiceOverride).voiceId : undefined),
+    [neuralCapable, style, gender, voiceOverride]
+  );
 
-  // Poll Engine state (works even if Engine has no onTick)
+  // Persist prefs
+  useEffect(() => kv.set("tts.style.v1", style), [style]);
+  useEffect(() => kv.set("tts.gender.v1", gender), [gender]);
+
+  // Engine poll
   useEffect(() => {
     const eng = getEngine();
     let off: (() => void) | undefined;
@@ -121,7 +173,7 @@ export default function PlayerTab() {
     };
   }, []);
 
-  // Listen to feelFit:* events just to reflect "last action"
+  // Listen to workout events (debug)
   useEffect(() => {
     const w = getWin();
     if (!w) return;
@@ -132,9 +184,26 @@ export default function PlayerTab() {
       w.addEventListener(name, h as EventListener);
       return { name, h };
     });
+    return () => handlers.forEach(({ name, h }) => w.removeEventListener(name, h as EventListener));
+  }, []);
+
+  // Voice guard
+  useEffect(() => {
+    const w = getWin();
+    if (!w) return;
+    const onStart = () => setSpeaking(true);
+    const onEnd = () => setSpeaking(false);
+    w.addEventListener("feelFit:voice-start", onStart as EventListener);
+    w.addEventListener("feelFit:voice-end", onEnd as EventListener);
     return () => {
-      handlers.forEach(({ name, h }) => w.removeEventListener(name, h as EventListener));
+      w.removeEventListener("feelFit:voice-start", onStart as EventListener);
+      w.removeEventListener("feelFit:voice-end", onEnd as EventListener);
     };
+  }, []);
+
+  // Preload mixer on mount (web) so polling/controls are live even before Start BGM
+  useEffect(() => {
+    void ensureMixer();
   }, []);
 
   const status = useMemo(() => {
@@ -143,17 +212,93 @@ export default function PlayerTab() {
     return "IDLE";
   }, [running]);
 
-  const previewHealing = () => {
-    stopAudio(); // ensure previous is stopped
-    playWorkoutAudio("middle", "healing", gender);
-  };
-  const previewMotivational = () => {
+  const onPreview = () => {
+    if (speaking) return;
+    setSpeaking(true);
     stopAudio();
-    playWorkoutAudio("nearEnd", "motivational", gender);
+    const content = styleToContent(style);
+    const phase: "start" | "middle" | "nearEnd" = content === "healing" ? "middle" : "nearEnd";
+    playWorkoutAudio(phase, content, gender);
+  };
+  const onStop = () => stopAudio();
+
+  const copyVoiceId = async () => {
+    if (!currentVoiceId) return;
+    try {
+      await Clipboard.setStringAsync(currentVoiceId);
+      setCopiedAt(Date.now());
+      setTimeout(() => setCopiedAt(null), 1500);
+    } catch {}
+  };
+
+  // ---- Mini BGM (web mixer) ----
+  const [mixPlaying, setMixPlaying] = useState(false);
+  const [mixReady, setMixReady] = useState(false);
+  const [mixDucking, setMixDucking] = useState(false);
+  const [mixVol, setMixVol] = useState(1);
+  const [mixUri, setMixUri] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const id = setInterval(() => {
+      const m = getMixer();
+      if (!m) {
+        setMixReady(false);
+        setMixPlaying(false);
+        setMixDucking(false);
+        setMixUri(null);
+        return;
+      }
+      setMixReady(!!m.state?.isReady);
+      setMixPlaying(!!m.state?.isPlayingA);
+      setMixDucking(!!m.state?.ducking);
+      setMixVol(typeof m.state?.volumeA === "number" ? m.state.volumeA : 1);
+      setMixUri(m.getCurrentTrackUri());
+    }, 300);
+    return () => clearInterval(id);
+  }, []);
+
+  const startBgm = async () => {
+    const m = await ensureMixer();
+    if (!m) return;
+    let tracks: string[] = [];
+    let shuffle = false;
+    try {
+      const raw = kv.get("healing.selection.v1");
+      tracks = raw ? (JSON.parse(raw) as string[]) : [];
+      shuffle = kv.get("healing.shuffle.v1") === "true";
+    } catch {}
+    if (!tracks || tracks.length === 0) tracks = ["song1", "song2"];
+    await m.setTracks({ tracks, shuffle });
+    await m.play();
+  };
+  const togglePlay = async () => {
+    const m = await ensureMixer();
+    if (!m) return;
+    if (m.state?.isPlayingA) m.pause();
+    else await m.play();
+  };
+  const next = async () => {
+    const m = await ensureMixer();
+    m?.next();
+  };
+  const prev = async () => {
+    const m = await ensureMixer();
+    m?.prev();
+  };
+  const volStep = async (d: number) => {
+    const m = await ensureMixer();
+    if (!m) return;
+    const nv = Math.max(0, Math.min(1, (m.state?.volumeA ?? 1) + d));
+    m.setVolumeA(nv);
+    setMixVol(nv);
   };
 
   return (
-    <View style={styles.wrap}>
+    <ScrollView
+      contentContainerStyle={[styles.wrap, { paddingBottom: bottomPad }]}
+      keyboardShouldPersistTaps="handled"
+    >
       <Text style={styles.title}>Player HUD</Text>
       <Text style={styles.kv}>
         Status: <Text style={styles.bold}>{status}</Text>
@@ -215,90 +360,95 @@ export default function PlayerTab() {
         </View>
 
         <View style={styles.previewRow}>
-          <Pressable style={[styles.btn, styles.primary]} onPress={previewHealing}>
-            <Text style={styles.btnText}>Preview (Healing)</Text>
+          <Pressable
+            disabled={speaking}
+            style={[styles.btn, styles.primary, speaking && styles.btnDisabled]}
+            onPress={speaking ? undefined : onPreview}
+          >
+            <Text style={styles.btnText}>{speaking ? "Speaking…" : "Preview"}</Text>
           </Pressable>
-          <Pressable style={[styles.btn, styles.alt]} onPress={previewMotivational}>
-            <Text style={styles.btnText}>Preview (Motivational)</Text>
-          </Pressable>
-          <Pressable style={[styles.btn, styles.dim]} onPress={() => stopAudio()}>
+          <Pressable style={[styles.btn, styles.dim]} onPress={onStop}>
             <Text style={styles.btnText}>Stop Voice</Text>
           </Pressable>
         </View>
 
         <Text style={styles.memo}>
-          • Saved as tts.style.v1 / tts.gender.v1{"\n"}• ElevenLabs key present → Neural voice; otherwise device TTS
+          • Saved: tts.style.v1 / tts.gender.v1{"\n"}• Provider:{" "}
+          <Text style={styles.bold}>{neuralCapable ? "Neural" : "Device"}</Text>
+          {neuralCapable && (
+            <>
+              {"\n"}• Voice ID: <Text style={styles.mono}>{currentVoiceId}</Text>
+              <Pressable style={styles.copyBtn} onPress={copyVoiceId}>
+                <Text style={styles.copyText}>{copiedAt ? "Copied" : "Copy"}</Text>
+              </Pressable>
+              {voiceOverride ? <Text style={styles.kvSmall}> (override)</Text> : null}
+            </>
+          )}
         </Text>
       </View>
 
-      <View style={styles.noteBox}>
-        <Text style={styles.note}>
-          • Emits window events with detail.origin = "player".{"\n"}
-          • Mirrors globalThis.__feelFit.engine if present (non-fatal if missing).{"\n"}
-          • Safe addition: no changes to existing screens or logic.
-        </Text>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Background Music (mini)</Text>
+        {Platform.OS !== "web" ? (
+          <Text style={styles.kvSmall}>Mixer is web-only.</Text>
+        ) : (
+          <>
+            <View style={styles.previewRow}>
+              <Pressable style={[styles.btn, styles.primary]} onPress={startBgm}>
+                <Text style={styles.btnText}>Start BGM</Text>
+              </Pressable>
+              <Pressable style={[styles.btn, styles.alt]} onPress={togglePlay}>
+                <Text style={styles.btnText}>{mixPlaying ? "Pause" : "Play"}</Text>
+              </Pressable>
+              <Pressable style={[styles.btn]} onPress={prev}>
+                <Text style={styles.btnText}>Prev</Text>
+              </Pressable>
+              <Pressable style={[styles.btn]} onPress={next}>
+                <Text style={styles.btnText}>Next</Text>
+              </Pressable>
+              <Pressable style={[styles.btn]} onPress={() => volStep(-0.1)}>
+                <Text style={styles.btnText}>Vol -</Text>
+              </Pressable>
+              <Pressable style={[styles.btn]} onPress={() => volStep(+0.1)}>
+                <Text style={styles.btnText}>Vol +</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.kv}>
+              Ready: <Text style={styles.bold}>{mixReady ? "YES" : "NO"}</Text> • Playing:{" "}
+              <Text style={styles.bold}>{mixPlaying ? "YES" : "NO"}</Text> • Ducking:{" "}
+              <Text style={styles.bold}>{mixDucking ? "YES" : "NO"}</Text> • Vol:{" "}
+              <Text style={styles.bold}>{mixVol.toFixed(2)}</Text>
+            </Text>
+            <Text style={styles.kv}>
+              Current URI: <Text style={styles.mono}>{mixUri || "-"}</Text>
+            </Text>
+          </>
+        )}
       </View>
-
-      {Platform.OS === "web" ? (
-        <Text style={styles.hint}>Web tip: ensure autoplay is unlocked by a user gesture in your audio layer.</Text>
-      ) : null}
-    </View>
+    </ScrollView>
   );
 }
 
 // ---- Styles ----
 const styles = StyleSheet.create({
   wrap: {
-    flex: 1,
+    minHeight: "100%",
     backgroundColor: "#0b0c10",
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
     gap: 12,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#ffffff",
-    marginBottom: 6,
-  },
-  kv: {
-    fontSize: 16,
-    color: "#d1d5db",
-  },
-  kvSmall: {
-    fontSize: 13,
-    color: "#9ca3af",
-  },
-  bold: {
-    fontWeight: "700",
-    color: "#ffffff",
-  },
-  row: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginTop: 8,
-  },
-  btn: {
-    backgroundColor: "#1f2937",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  primary: {
-    backgroundColor: "#2563eb",
-  },
-  alt: {
-    backgroundColor: "#10b981",
-  },
-  dim: {
-    backgroundColor: "#4b5563",
-  },
-  btnText: {
-    color: "#ffffff",
-    fontWeight: "600",
-  },
+  title: { fontSize: 22, fontWeight: "700", color: "#ffffff", marginBottom: 6 },
+  kv: { fontSize: 16, color: "#d1d5db" },
+  kvSmall: { fontSize: 13, color: "#9ca3af" },
+  bold: { fontWeight: "700", color: "#ffffff" },
+  row: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 8 },
+  btn: { backgroundColor: "#1f2937", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 },
+  primary: { backgroundColor: "#2563eb" },
+  alt: { backgroundColor: "#10b981" },
+  dim: { backgroundColor: "#4b5563" },
+  btnText: { color: "#ffffff", fontWeight: "600" },
 
-  // Card
   card: {
     marginTop: 6,
     borderColor: "#374151",
@@ -308,17 +458,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#111827",
     gap: 10,
   },
-  cardTitle: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
-  styleGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
+  cardTitle: { color: "#ffffff", fontSize: 16, fontWeight: "700", marginBottom: 2 },
+  styleGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   styleChip: {
     borderWidth: 1,
     borderColor: "#374151",
@@ -327,33 +468,12 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
   },
-  styleChipActive: {
-    backgroundColor: "#2563eb",
-    borderColor: "#2563eb",
-  },
-  styleChipText: {
-    color: "#cbd5e1",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  styleChipTextActive: {
-    color: "#ffffff",
-  },
-  genderRow: {
-    marginTop: 4,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  label: {
-    color: "#cbd5e1",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  genderBtns: {
-    flexDirection: "row",
-    gap: 8,
-  },
+  styleChipActive: { backgroundColor: "#2563eb", borderColor: "#2563eb" },
+  styleChipText: { color: "#cbd5e1", fontSize: 13, fontWeight: "600" },
+  styleChipTextActive: { color: "#ffffff" },
+  genderRow: { marginTop: 4, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  label: { color: "#cbd5e1", fontSize: 14, fontWeight: "700" },
+  genderBtns: { flexDirection: "row", gap: 8 },
   genderBtn: {
     borderWidth: 1,
     borderColor: "#374151",
@@ -362,46 +482,23 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
   },
-  genderBtnActive: {
-    backgroundColor: "#2563eb",
-    borderColor: "#2563eb",
-  },
-  genderText: {
+  genderBtnActive: { backgroundColor: "#2563eb", borderColor: "#2563eb" },
+  genderText: { color: "#cbd5e1", fontSize: 13, fontWeight: "700" },
+  genderTextActive: { color: "#ffffff" },
+  previewRow: { marginTop: 8, flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  memo: { color: "#9ca3af", fontSize: 12, marginTop: 4 },
+  mono: {
+    fontFamily: Platform.select({ web: "ui-monospace, Menlo, monospace", default: "monospace" }),
     color: "#cbd5e1",
-    fontSize: 13,
-    fontWeight: "700",
   },
-  genderTextActive: {
-    color: "#ffffff",
+  btnDisabled: { opacity: 0.5 },
+  copyBtn: {
+    marginLeft: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: "#374151",
+    alignSelf: "baseline",
   },
-  previewRow: {
-    marginTop: 4,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  memo: {
-    color: "#9ca3af",
-    fontSize: 12,
-    marginTop: 4,
-  },
-
-  noteBox: {
-    marginTop: 6,
-    borderColor: "#374151",
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
-    backgroundColor: "#111827",
-  },
-  note: {
-    color: "#9ca3af",
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  hint: {
-    marginTop: 8,
-    color: "#6b7280",
-    fontSize: 12,
-  },
+  copyText: { color: "#fff", fontSize: 12, fontWeight: "700" },
 });

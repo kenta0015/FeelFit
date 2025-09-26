@@ -1,10 +1,11 @@
 ﻿// hooks/useAudioMixer.web.ts
-// Minimal HTMLAudio-based mixer (web only) with voice ducking via feelFit:voice-start/end.
-// - Singleton exposed at globalThis.__ffMixer for debugging.
-// - setTracks accepts IDs or URIs. IDs are resolved via utils/healingCatalog.ts (assets/healing/*).
-// - Methods: setTracks, play/playHealing, pause, resume, stop, setVolumeA, getCurrentTrackUri
+// HTMLAudio-based mixer (web only) with voice ducking via feelFit:voice-start/end.
+// - Singleton at globalThis.__ffMixer
+// - setTracks accepts IDs or URIs. IDs resolved via utils/healingCatalog.ts
+// - Methods: setTracks, play/playHealing, pause, resume, stop, setVolumeA, getCurrentTrackUri, next/prev
 // - State: isReady, isPlayingA, volumeA, ducking(false), bpmTier(null)
-// - Non-breaking: preserves existing API and behavior; only changes ID->URI resolution.
+// - Persistence (Phase6): healing.selection.v1 (JSON), healing.shuffle.v1 (bool)
+// - Stabilized voice ducking: ref-count + debounce to avoid double-end/start flaps.
 
 import { useEffect, useState } from "react";
 import { getHealingUri } from "@/utils/healingCatalog";
@@ -22,6 +23,10 @@ type MixerState = {
 
 type Listener = () => void;
 
+const K_SELECTION = "healing.selection.v1";
+const K_SHUFFLE = "healing.shuffle.v1";
+
+// ---- helpers ----
 function isUri(s: string): boolean {
   return /^(https?:|blob:|data:|file:)/i.test(s) || s.includes("/") || /\.[a-z0-9]{2,4}$/i.test(s);
 }
@@ -45,7 +50,7 @@ const singleton = (function buildSingleton() {
   const g: AnyObj = typeof globalThis !== "undefined" ? (globalThis as AnyObj) : {};
   g.__feelFit = g.__feelFit || {};
 
-  // HTMLAudio + (optional) AudioContext
+  // HTMLAudio element
   const audio: HTMLAudioElement =
     (g.__ffMixer && g.__ffMixer.audio) ||
     (() => {
@@ -55,9 +60,10 @@ const singleton = (function buildSingleton() {
       return a;
     })();
 
+  // Optional AudioContext (for autoplay unlock on some browsers)
   let actx: AudioContext | null = null;
   try {
-    // @ts-ignore - Safari
+    // @ts-ignore Safari types
     const AC = (window as AnyObj).AudioContext || (window as AnyObj).webkitAudioContext;
     if (AC) {
       actx = g.__ffMixer?.actx || new AC();
@@ -70,6 +76,7 @@ const singleton = (function buildSingleton() {
   } catch {}
 
   // Internal state
+  let rawTracks: string[] = [];
   let tracks: string[] = [];
   let shuffle = false;
   let currentIndex = 0;
@@ -130,10 +137,25 @@ const singleton = (function buildSingleton() {
     } catch {}
     emit();
   }
-  function setDucking(v: boolean) {
-    state.ducking = !!v;
-    applyVolume();
-    emit();
+
+  // ---- Ducking with ref-count + debounce ----
+  let duckRefCount = 0;
+  let lastEvtTs = { start: 0, end: 0 };
+  const DUCK_DEBOUNCE_MS = 200;
+
+  function shouldAccept(kind: "start" | "end") {
+    const now = Date.now();
+    if (now - lastEvtTs[kind] < DUCK_DEBOUNCE_MS) return false;
+    lastEvtTs[kind] = now;
+    return true;
+  }
+  function applyDucking() {
+    const next = duckRefCount > 0;
+    if (state.ducking !== next) {
+      state.ducking = next;
+      applyVolume();
+      emit();
+    }
   }
 
   async function ensureUnlocked() {
@@ -152,11 +174,42 @@ const singleton = (function buildSingleton() {
     return out;
   }
 
+  function persistSelection() {
+    try {
+      localStorage.setItem(K_SELECTION, JSON.stringify(rawTracks || []));
+      localStorage.setItem(K_SHUFFLE, String(!!shuffle));
+    } catch {}
+  }
+
+  function hydrateFromStorage() {
+    try {
+      const sel = localStorage.getItem(K_SELECTION);
+      const sh = localStorage.getItem(K_SHUFFLE);
+      const parsed = sel ? JSON.parse(sel) : null;
+      if (Array.isArray(parsed)) {
+        rawTracks = parsed.map(String).filter(Boolean);
+        tracks = resolveTracks(rawTracks);
+      }
+      shuffle = sh === "true";
+      if (tracks.length > 0) {
+        audio.src = tracks[0];
+        audio.load();
+        setReady(true);
+      } else {
+        audio.src = "";
+        setReady(false);
+      }
+      setPlaying(false);
+    } catch {}
+  }
+
   async function setTracks(arg: TracksArg) {
-    const list = resolveTracks(arg?.tracks || []);
-    tracks = list;
+    rawTracks = Array.isArray(arg?.tracks) ? [...arg.tracks] : [];
+    tracks = resolveTracks(rawTracks);
     shuffle = !!arg?.shuffle;
     currentIndex = 0;
+
+    persistSelection();
 
     if (tracks.length > 0) {
       try {
@@ -272,15 +325,26 @@ const singleton = (function buildSingleton() {
     audio.onpause = () => setPlaying(false);
   } catch {}
 
-  // ---- Voice ducking via feelFit events ----
+  // ---- Voice ducking via feelFit events (ref-count + debounce) ----
   try {
-    const onVoiceStart = () => setDucking(true);
-    const onVoiceEnd = () => setDucking(false);
+    const onVoiceStart = () => {
+      if (!shouldAccept("start")) return;
+      duckRefCount++;
+      applyDucking();
+    };
+    const onVoiceEnd = () => {
+      if (!shouldAccept("end")) return;
+      duckRefCount = Math.max(0, duckRefCount - 1);
+      applyDucking();
+    };
     window.addEventListener("feelFit:voice-start", onVoiceStart as EventListener);
     window.addEventListener("feelFit:voice-end", onVoiceEnd as EventListener);
-    // ensure initial volume is applied considering current ducking
+    // ensure volume reflects initial ducking state
     applyVolume();
   } catch {}
+
+  // Hydrate persisted selection/shuffle
+  hydrateFromStorage();
 
   // Expose API
   const api = {
@@ -315,7 +379,7 @@ const singleton = (function buildSingleton() {
   if (!g.__ffMixer) {
     g.__ffMixer = api;
   } else {
-    // Update mutable parts if reloaded HMR
+    // Update mutable parts if HMR
     g.__ffMixer.state = state;
     g.__ffMixer.audio = audio;
     g.__ffMixer.actx = actx;

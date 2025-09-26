@@ -1,7 +1,6 @@
 // utils/audio.ts
-// Web: auto-switch to ElevenLabs if EXPO_PUBLIC_ELEVENLABS_API_KEY is set.
-// Native/No key: fall back to expo-speech.
-// Emits: feelFit:voice-start / feelFit:voice-end (origin: "tts").
+// ElevenLabs (web) with device TTS fallback (expo-speech).
+// Emits feelFit:voice-start / feelFit:voice-end with de-dup guard (single end per session).
 // Applies Voice Style from localStorage "tts.style.v1" + "tts.gender.v1".
 
 import * as Speech from "expo-speech";
@@ -110,9 +109,44 @@ function getSavedGender(fallback: Gender): Gender {
   return fallback;
 }
 
-// -------- Internal (web) ElevenLabs playback --------
+// -------- Voice session guard (de-dup) --------
 let currentWebAudio: HTMLAudioElement | null = null;
+let currentWebAudioUrl: string | null = null;
 
+let voiceTokenSeq = 0;
+let activeVoiceToken: number | null = null;
+
+function voiceStart(provider: "elevenlabs" | "device-tts", extra?: Record<string, any>) {
+  activeVoiceToken = ++voiceTokenSeq;
+  emitFeelFit("voice-start", { origin: "tts", provider, token: activeVoiceToken, ...(extra || {}) });
+}
+
+function voiceEnd(extra?: Record<string, any>) {
+  if (activeVoiceToken == null) return; // already ended or never started
+  const token = activeVoiceToken;
+  activeVoiceToken = null;
+  emitFeelFit("voice-end", { origin: "tts", token, ...(extra || {}) });
+}
+
+function cleanupWebAudio() {
+  if (currentWebAudio) {
+    try {
+      currentWebAudio.onended = null;
+      currentWebAudio.onerror = null;
+      currentWebAudio.pause();
+      currentWebAudio.src = "";
+    } catch {}
+  }
+  if (currentWebAudioUrl) {
+    try {
+      URL.revokeObjectURL(currentWebAudioUrl);
+    } catch {}
+  }
+  currentWebAudio = null;
+  currentWebAudioUrl = null;
+}
+
+// -------- Internal (web) ElevenLabs playback --------
 async function playWithElevenLabsWeb(
   text: string,
   opts: { voiceId: string; modelId: string; settings: Record<string, any> }
@@ -129,7 +163,7 @@ async function playWithElevenLabsWeb(
   const body = {
     text,
     model_id: modelId,
-    voice_settings: settings, // ★ style/stability/speaking_rate/pitch etc.
+    voice_settings: settings, // style/stability/speaking_rate/pitch etc.
   };
 
   const res = await fetch(url, {
@@ -148,25 +182,22 @@ async function playWithElevenLabsWeb(
   const blob = new Blob([buf], { type: "audio/mpeg" });
   const src = URL.createObjectURL(blob);
 
-  if (currentWebAudio) {
-    try {
-      currentWebAudio.pause();
-      currentWebAudio.src = "";
-    } catch {}
-    currentWebAudio = null;
-  }
-
+  // replace previous audio
+  cleanupWebAudio();
   const audio = new Audio(src);
   currentWebAudio = audio;
+  currentWebAudioUrl = src;
 
-  emitFeelFit("voice-start", { origin: "tts", provider: "elevenlabs" });
+  voiceStart("elevenlabs", { provider: "elevenlabs" });
 
-  audio.addEventListener("ended", () => {
-    emitFeelFit("voice-end", { origin: "tts", provider: "elevenlabs" });
-  });
-  audio.addEventListener("error", () => {
-    emitFeelFit("voice-end", { origin: "tts", provider: "elevenlabs", error: true });
-  });
+  audio.onended = () => {
+    voiceEnd({ provider: "elevenlabs" });
+    cleanupWebAudio();
+  };
+  audio.onerror = () => {
+    voiceEnd({ provider: "elevenlabs", error: true });
+    cleanupWebAudio();
+  };
 
   await audio.play();
 }
@@ -189,20 +220,13 @@ export const playWorkoutAudio = (
     playWithElevenLabsWeb(text, preset).catch(() => {
       // Fallback to device TTS on error
       const opts = toExpoSpeechOptions(style, gender);
-      emitFeelFit("voice-start", { origin: "tts", provider: "device-tts", fallback: true });
+      voiceStart("device-tts", { provider: "device-tts", fallback: true });
       Speech.speak(text, {
         voice: opts.voice,
         rate: opts.rate,
         pitch: opts.pitch,
-        onDone: () =>
-          emitFeelFit("voice-end", { origin: "tts", provider: "device-tts", fallback: true }),
-        onStopped: () =>
-          emitFeelFit("voice-end", {
-            origin: "tts",
-            provider: "device-tts",
-            stopped: true,
-            fallback: true,
-          }),
+        onDone: () => voiceEnd({ provider: "device-tts", fallback: true }),
+        onStopped: () => voiceEnd({ provider: "device-tts", stopped: true, fallback: true }),
       });
     });
     return;
@@ -210,29 +234,23 @@ export const playWorkoutAudio = (
 
   // Native / no key / non-web → Expo Speech using style mapping
   const opts = toExpoSpeechOptions(style, gender);
-  emitFeelFit("voice-start", { origin: "tts", provider: "device-tts" });
+  voiceStart("device-tts", { provider: "device-tts" });
   Speech.speak(text, {
     voice: opts.voice,
     rate: opts.rate,
     pitch: opts.pitch,
-    onDone: () => emitFeelFit("voice-end", { origin: "tts", provider: "device-tts" }),
-    onStopped: () =>
-      emitFeelFit("voice-end", { origin: "tts", provider: "device-tts", stopped: true }),
+    onDone: () => voiceEnd({ provider: "device-tts" }),
+    onStopped: () => voiceEnd({ provider: "device-tts", stopped: true }),
   });
 };
 
 export const stopAudio = () => {
+  // stop device TTS
   try {
     Speech.stop();
   } catch {}
-  emitFeelFit("voice-end", { origin: "tts", provider: "device-tts", manualStop: true });
-
-  if (currentWebAudio) {
-    try {
-      currentWebAudio.pause();
-      currentWebAudio.src = "";
-    } catch {}
-    currentWebAudio = null;
-    emitFeelFit("voice-end", { origin: "tts", provider: "elevenlabs", manualStop: true });
-  }
+  // stop web audio
+  cleanupWebAudio();
+  // single synthetic end for the active session (manual stop)
+  voiceEnd({ manualStop: true });
 };

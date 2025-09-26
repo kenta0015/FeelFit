@@ -1,33 +1,35 @@
 // utils/healingCatalog.ts
-// ID -> asset URI resolver (web/native). Put mp3 files under assets/healing/
+// ID → URI resolver for healing BGM (Expo Web serves /public/* at the web root).
+// Use /healing/<id>.mp3 (no "/public" in URL).
 
-import { Asset } from "expo-asset";
+export type HealingId = string;
 
-// Register actual files you have:
-const REG: Record<string, number> = {
-  song1: require("@/assets/healing/song1.mp3"),
-  song2: require("@/assets/healing/song2.mp3"),
+const MAP: Record<HealingId, string> = {
+  song1: "/healing/song1.mp3",
+  song2: "/healing/song2.mp3",
 };
 
-function isAbsoluteUrl(s: string) {
-  return /^(https?:|blob:|data:)/i.test(s);
+function isUri(s: string): boolean {
+  return /^(https?:|blob:|data:|file:)/i.test(s) || s.includes("/") && /\.[a-z0-9]{2,4}$/i.test(s);
 }
 
-/** Returns a playable URI for HTMLAudio / AV. Null if unknown ID. */
-export function getHealingUri(idOrUrl: string): string | null {
-  const s = (idOrUrl || "").trim();
-  if (!s) return null;
-  if (isAbsoluteUrl(s) || s.includes("/")) return s;
-
-  const mod = REG[s];
-  if (!mod) return null;
-
-  const asset = Asset.fromModule(mod);
-  // Warmup on web; non-blocking.
-  // @ts-ignore
-  if (typeof asset.downloadAsync === "function") asset.downloadAsync().catch(() => {});
-  return asset.uri ?? null;
+/** Register/override an ID → URI mapping at runtime. */
+export function registerHealingTrack(id: HealingId, uri: string) {
+  if (!id || !uri) return;
+  MAP[String(id).trim()] = String(uri).trim();
 }
 
-/** For UI/testing */
-export const KNOWN_HEALING_IDS = Object.keys(REG);
+/** Return a web-playable URI for a healing track ID. */
+export function getHealingUri(id: HealingId): string | null {
+  const key = String(id || "").trim();
+  if (!key) return null;
+  if (isUri(key)) return key; // absolute/relative URL provided directly
+  if (MAP[key]) return MAP[key];
+  // Convention fallback
+  return `/healing/${encodeURIComponent(key)}.mp3`;
+}
+
+/** Introspect available IDs (registered + defaults). */
+export function getKnownHealingIds(): string[] {
+  return Object.keys(MAP);
+}
