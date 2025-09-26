@@ -1,8 +1,10 @@
+// app/(tabs)/workout.tsx
 import React, { useEffect, useRef, useState } from 'react';
 import { SafeAreaView, View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Dumbbell, Clock, StopCircle, PlayCircle } from 'lucide-react-native';
 import { WorkoutSession, MoodLog } from '@/types';
 import { saveWorkoutSession, saveMoodLog, getUser } from '@/utils/storage';
+import { emitFeelFit, onMany } from '@/utils/feelFitEvents';
 
 const formatSec = (s: number) => {
   const mm = Math.floor(s / 60);
@@ -16,10 +18,12 @@ const uuid = () => {
   return `${s4()}${s4()}-${s4()}-${s4()}-${s4()}-${s4()}${s4()}${s4()}`;
 };
 
+const DEFAULT_SECONDS = 30;
+
 export default function WorkoutTestScreen() {
   const [userId, setUserId] = useState<string | null>(null);
   const [active, setActive] = useState<WorkoutSession | null>(null);
-  const [remaining, setRemaining] = useState<number>(30);
+  const [remaining, setRemaining] = useState<number>(DEFAULT_SECONDS);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -32,6 +36,52 @@ export default function WorkoutTestScreen() {
     };
   }, []);
 
+  // ---- Subscribe HUD events (pause/resume/finish) ----
+  useEffect(() => {
+    const off = onMany(['workout-pause', 'workout-resume', 'workout-finish'], (type, detail) => {
+      // Ignore self
+      if (detail?.origin === 'workout-test') return;
+
+      switch (type) {
+        case 'workout-pause': {
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+          break;
+        }
+        case 'workout-resume': {
+          if (!active || timerRef.current) return;
+          timerRef.current = setInterval(() => {
+            setRemaining((prev) => {
+              if (prev <= 1) {
+                clearInterval(timerRef.current!);
+                timerRef.current = null;
+                onEnd();
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+          break;
+        }
+        case 'workout-finish': {
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+          if (active) {
+            onEnd();
+          } else {
+            setRemaining(DEFAULT_SECONDS);
+          }
+          break;
+        }
+      }
+    });
+    return off;
+  }, [active]);
+
   const handleStart30s = async () => {
     if (!userId) return;
 
@@ -42,22 +92,25 @@ export default function WorkoutTestScreen() {
       workoutId: 'debug-30s',
       startEmotion: '',
       improvementType: 'mental',
-      selectedTime: 1,            // ← DBはint（実時間は30秒でカウント）
+      selectedTime: 1,            // DB stores minutes; test counts 30s
       startTime: now,
       completionPercentage: 0,
       staminaGained: 0,
       physicalStaminaGained: 0,
     };
 
-    // ★ 開始時はDBに書かない（endtimeが必須のため）
-    setActive(session);
-    setRemaining(30);
+    // Emit start event (HUD sync)
+    emitFeelFit('workout-start', { origin: 'workout-test', totalSec: DEFAULT_SECONDS });
 
-    timerRef.current && clearInterval(timerRef.current);
+    setActive(session);
+    setRemaining(DEFAULT_SECONDS);
+
+    if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       setRemaining((prev) => {
         if (prev <= 1) {
           clearInterval(timerRef.current!);
+          timerRef.current = null;
           onEnd();
           return 0;
         }
@@ -67,7 +120,14 @@ export default function WorkoutTestScreen() {
   };
 
   const onEnd = async () => {
-    if (!active) return;
+    if (!active) {
+      // reset only
+      setRemaining(DEFAULT_SECONDS);
+      return;
+    }
+
+    // Emit finish for HUD sync
+    emitFeelFit('workout-finish', { origin: 'workout-test', completionPercentage: 100 });
 
     const ended: WorkoutSession = {
       ...active,
@@ -76,7 +136,6 @@ export default function WorkoutTestScreen() {
       staminaGained: active.staminaGained || 10,
       physicalStaminaGained: active.physicalStaminaGained || 0,
     };
-    // ★ 終了時にまとめて保存（start/end 両方あり）
     await saveWorkoutSession(ended);
 
     const mood: MoodLog = {
@@ -89,7 +148,7 @@ export default function WorkoutTestScreen() {
     await saveMoodLog(mood);
 
     setActive(null);
-    setRemaining(30);
+    setRemaining(DEFAULT_SECONDS);
   };
 
   return (
@@ -100,12 +159,12 @@ export default function WorkoutTestScreen() {
           <Text style={styles.title}>Workout (Test)</Text>
         </View>
 
-        {!userId && <Text style={styles.note}>Sign-in済みか確認してください。</Text>}
+        {!userId && <Text style={styles.note}>Please sign in first.</Text>}
 
         <View style={styles.row}>
           <Clock size={18} color="#f59e0b" />
           <Text style={styles.label}>Duration</Text>
-          <Text style={styles.value}>30 sec</Text>
+          <Text style={styles.value}>{DEFAULT_SECONDS} sec</Text>
         </View>
 
         {!active ? (
@@ -115,7 +174,7 @@ export default function WorkoutTestScreen() {
             disabled={!userId}
           >
             <PlayCircle size={20} color="#fff" />
-            <Text style={styles.btnText}>Start 30s Test</Text>
+            <Text style={styles.btnText}>Start {DEFAULT_SECONDS}s Test</Text>
           </TouchableOpacity>
         ) : (
           <>

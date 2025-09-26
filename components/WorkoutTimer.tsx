@@ -1,8 +1,11 @@
+// components/WorkoutTimer.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Play, Pause, Square, RotateCcw } from 'lucide-react-native';
 import { Exercise } from '@/types';
 import { playWorkoutAudio } from '@/utils/audio';
+import { emitFeelFit } from '@/utils/feelFitEvents';
+import { onMany } from '@/utils/feelFitEvents';
 
 interface WorkoutTimerProps {
   exercise: Exercise;
@@ -21,6 +24,38 @@ export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePref
   const totalTime = exercise.duration * 60;
   const progress = ((totalTime - timeLeft) / totalTime) * 100;
   const completionPercentage = Math.round(progress);
+
+  // ---- Subscribe to external HUD/MiniPlayer events (bidirectional sync) ----
+  useEffect(() => {
+    const off = onMany(
+      ['workout-start', 'workout-pause', 'workout-resume', 'workout-finish'],
+      (type, detail) => {
+        // Ignore self-originated events
+        if (detail?.origin === 'workout-timer') return;
+
+        switch (type) {
+          case 'workout-start':
+            // Reset to start-of-workout and run
+            setTimeLeft(totalTime);
+            setIsRunning(true);
+            break;
+          case 'workout-pause':
+            setIsRunning(false);
+            break;
+          case 'workout-resume':
+            setIsRunning(true);
+            break;
+          case 'workout-finish':
+            // Stop & reset UI. (Do NOT call onComplete here to avoid double-saving.)
+            setIsRunning(false);
+            setTimeLeft(totalTime);
+            break;
+        }
+      }
+    );
+    return off;
+    // totalTime only (exercise duration change resets listener state naturally)
+  }, [totalTime]);
 
   useEffect(() => {
     if (isRunning && timeLeft > 0) {
@@ -65,15 +100,34 @@ export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePref
     if (timeLeft === 0) {
       setIsRunning(false);
       playWorkoutAudio('completion', exercise.audioType, voicePreference);
+      // ▼ イベント（Finish）
+      emitFeelFit('workout-finish', { origin: 'workout-timer', completionPercentage: 100 });
       onComplete(100);
     }
   }, [timeLeft, onComplete, voicePreference, exercise.audioType]);
 
   const startTimer = () => {
+    // ▼ イベント（Start or Resume）
+    if (timeLeft === totalTime) {
+      emitFeelFit('workout-start', {
+        origin: 'workout-timer',
+        totalSec: totalTime,
+        exercise: {
+          id: exercise.id,
+          name: exercise.name,
+          duration: exercise.duration,
+          intensity: exercise.intensity,
+        },
+      });
+    } else {
+      emitFeelFit('workout-resume', { origin: 'workout-timer' });
+    }
     setIsRunning(true);
   };
 
   const pauseTimer = () => {
+    // ▼ イベント（Pause）
+    emitFeelFit('workout-pause', { origin: 'workout-timer' });
     setIsRunning(false);
   };
 
@@ -90,7 +144,11 @@ export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePref
         { text: 'Continue', style: 'cancel' },
         {
           text: 'Finish',
-          onPress: () => onComplete(completionPercentage),
+          onPress: () => {
+            // ▼ イベント（Finish）
+            emitFeelFit('workout-finish', { origin: 'workout-timer', completionPercentage });
+            onComplete(completionPercentage);
+          },
           style: 'destructive'
         }
       ]
@@ -153,7 +211,7 @@ export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePref
             <RotateCcw size={20} color="#6b7280" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.stopButton} onPress={stopWorkout}>
+        <TouchableOpacity style={styles.stopButton} onPress={stopWorkout}>
             <Square size={20} color="#dc2626" />
             <Text style={styles.stopButtonText}>Finish</Text>
           </TouchableOpacity>
