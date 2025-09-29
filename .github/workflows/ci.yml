@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main # ← main への push で実行
+  pull_request:
+    branches:
+      - main # ← main 向け PR で実行
+
+jobs:
+  build-test: # ← ブランチ保護の「必須チェック」名と一致
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci || npm i
+
+      - name: Typecheck
+        run: npm run typecheck --if-present || npx tsc -p . --noEmit
+
+      - name: Lint (optional)
+        run: npm run lint --if-present || echo "no lint script"
+
+      - name: Test (optional)
+        run: npm test --if-present -- --watch=false
