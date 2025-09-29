@@ -1,8 +1,13 @@
 // components/BgmAutoplay.tsx
+// Auto-apply BGM on workout events (web mixer).
+// FIX: choose playlist by kind (healing/motivational) based on event payload,
+//      instead of always applying healing. Keeps retry logic and pause/resume/finish handling.
+
 import * as React from "react";
 import { Platform } from "react-native";
+import { EXERCISES } from "@/data/exercises";
 
-// ── Mixer access（PlayerTab と同じユーティリティを最低限再掲）
+// ── Mixer access
 type MiniMixer = {
   play: () => Promise<void> | void;
   pause: () => void;
@@ -35,7 +40,9 @@ async function ensureMixer(): Promise<MiniMixer | undefined> {
 // localStorage helpers
 const kv = {
   get(key: string): string | null {
-    try { if (typeof localStorage !== "undefined") return localStorage.getItem(key); } catch {}
+    try {
+      if (typeof localStorage !== "undefined") return localStorage.getItem(key);
+    } catch {}
     return null;
   },
 };
@@ -47,41 +54,94 @@ function add(type: string, fn: EventListenerOrEventListenerObject) {
   return () => tgt.removeEventListener?.(type, fn);
 }
 
+// ---- kind resolution (authoritative: audioType -> type -> EXERCISES -> heuristics)
+type ContentKind = "healing" | "motivational";
+const HEALING_HINTS = ["breath", "breathing", "medit", "yoga", "stretch", "calm", "relax", "recovery"];
+const MOTIVE_HINTS = ["hiit", "run", "cardio", "strength", "power", "workout", "motive", "speed", "intense"];
+
+function resolveKind(detail?: any): ContentKind | null {
+  const a = (detail?.audioType || "").toLowerCase();
+  if (a === "healing" || a === "motivational") return a as ContentKind;
+
+  const t = (detail?.type || "").toLowerCase();
+  if (t === "healing" || t === "motivational") return t as ContentKind;
+
+  const exId = String(detail?.exerciseId || "").trim();
+  if (exId) {
+    try {
+      const ex = EXERCISES.find((e: any) => e?.id?.toLowerCase?.() === exId.toLowerCase());
+      const at = (ex as any)?.audioType;
+      if (at === "healing" || at === "motivational") return at as ContentKind;
+      const seed = `${ex?.id ?? ""}|${ex?.name ?? ""}|${(ex as any)?.category ?? ""}`.toLowerCase();
+      if (seed) {
+        if (HEALING_HINTS.some((k) => seed.includes(k))) return "healing";
+        if (MOTIVE_HINTS.some((k) => seed.includes(k))) return "motivational";
+      }
+    } catch {}
+  }
+
+  const raw = `${detail?.workout || ""}|${detail?.type || ""}`.toLowerCase();
+  if (raw) {
+    if (HEALING_HINTS.some((k) => raw.includes(k))) return "healing";
+    if (MOTIVE_HINTS.some((k) => raw.includes(k))) return "motivational";
+  }
+
+  return null;
+}
+
 export default function BgmAutoplay(): null {
-  // 再生は “一度でもユーザー操作があった後” でないとブロックされる可能性があるため、
-  // start 直後に “初回のみ数回リトライ” を入れておく
+  // retry to overcome suspended AudioContext on first user gesture
   const retryRef = React.useRef<number>(0);
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAppliedRef = React.useRef<ContentKind | null>(null);
 
   React.useEffect(() => {
-    if (Platform.OS !== "web") return; // いまは web ミキサーのみ
+    if (Platform.OS !== "web") return; // web mixer only for now
 
     const start = async (detail?: any) => {
       const m = await ensureMixer();
       if (!m) return;
 
-      // トラック選択（未設定なら仮のデフォルト）
+      const kind = resolveKind(detail);
+      if (!kind) {
+        // do not force a default; avoid overwriting unknown intent
+        // console.debug("[BgmAutoplay] skip: unknown kind", detail);
+        return;
+      }
+
+      // dedupe: if same kind already applied, just ensure playing
+      if (lastAppliedRef.current === kind) {
+        try { await m.play(); } catch {}
+        return;
+      }
+
+      const selKey = kind === "healing" ? "healing.selection.v1" : "motivational.selection.v1";
+      const shufKey = kind === "healing" ? "healing.shuffle.v1" : "motivational.shuffle.v1";
+
       let tracks: string[] = [];
       let shuffle = false;
       try {
-        const raw = kv.get("healing.selection.v1");
+        const raw = kv.get(selKey);
         tracks = raw ? (JSON.parse(raw) as string[]) : [];
-        shuffle = kv.get("healing.shuffle.v1") === "true";
+        shuffle = kv.get(shufKey) === "true";
       } catch {}
+
       if (!tracks || tracks.length === 0) {
-        // デフォルトのダミー
-        tracks = ["song1", "song2"];
+        tracks =
+          kind === "healing"
+            ? ["/audio/calm/sleep-inducing-ambient-music-with-gentle-ocean-waves-370140.mp3"]
+            : ["/audio/motive/motivation-motivational-background-music-292747.mp3"];
       }
 
       try {
         await m.setTracks({ tracks, shuffle });
         await m.play();
-        retryRef.current = 0; // 成功
+        lastAppliedRef.current = kind;
+        retryRef.current = 0; // success
       } catch {
-        // AudioContext が "suspended" などのとき。
         if (retryRef.current < 3) {
           const n = ++retryRef.current;
-          timerRef.current && clearTimeout(timerRef.current);
+          if (timerRef.current) clearTimeout(timerRef.current);
           timerRef.current = setTimeout(() => start(detail), 400 * n);
         }
       }
@@ -101,6 +161,7 @@ export default function BgmAutoplay(): null {
     const finish = async () => {
       const m = await ensureMixer();
       m?.stop();
+      lastAppliedRef.current = null;
     };
 
     const offStart  = add("feelFit:workout-start",  (e: any) => start(e?.detail));

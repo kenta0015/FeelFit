@@ -1,8 +1,12 @@
 // app/workout/session.tsx
 // Unified Workout Session screen with safe finish emission.
 // Route: /workout/session?duration=600&exerciseId=xxx&style=female&mode=recovery
+// Changes:
+// - Emit workout-start with explicit exerciseId, name, and inferred audioType (healing/motivational).
+// - Guard against duplicate start emissions.
+// - Keep WorkoutTimer minutes logic intact; orchestrator receives seconds.
 
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   SafeAreaView,
   View,
@@ -31,6 +35,24 @@ function dispatchGlobalEvent(type: string, detail?: Record<string, any>) {
   } catch {}
 }
 
+// Heuristic classification for BGM kind (fallback if exercise.audioType is absent)
+type ContentKind = "healing" | "motivational";
+const HEALING_HINTS = ["breath", "breathing", "medit", "yoga", "stretch", "calm", "relax", "recovery"];
+const MOTIVE_HINTS = ["hiit", "run", "cardio", "strength", "power", "workout", "motive", "speed", "intense"];
+
+function classifyContentKind(ex?: Exercise): ContentKind | null {
+  // 1) explicit field on exercise if present
+  const at = (ex as any)?.audioType as string | undefined;
+  if (at === "healing" || at === "motivational") return at;
+
+  // 2) fuzzy by id/name/category
+  const seed = `${ex?.id ?? ""}|${ex?.name ?? ""}|${(ex as any)?.category ?? ""}`.toLowerCase();
+  if (!seed) return null;
+  if (HEALING_HINTS.some((k) => seed.includes(k))) return "healing";
+  if (MOTIVE_HINTS.some((k) => seed.includes(k))) return "motivational";
+  return null;
+}
+
 export default function WorkoutSessionScreen() {
   const params = useLocalSearchParams<{
     duration?: string;   // seconds
@@ -43,6 +65,7 @@ export default function WorkoutSessionScreen() {
     (params.style as "male" | "female") || "female"
   );
 
+  // Load persisted voice preference (local storage layer)
   useEffect(() => {
     (async () => {
       const u = await getUser();
@@ -62,11 +85,14 @@ export default function WorkoutSessionScreen() {
     if (id) {
       const found = EXERCISES.find((ex) => ex.id === id);
       if (found) return found;
+      // fallback by loose match on name
+      const loose = EXERCISES.find((ex) => ex.name?.toLowerCase?.() === id.toLowerCase());
+      if (loose) return loose;
     }
     return EXERCISES[0];
   }, [params.exerciseId]);
 
-  // Convert duration(seconds query) -> minutes for WorkoutTimer/exercise.duration
+  // Convert duration (seconds query) -> minutes for WorkoutTimer/exercise.duration
   const exerciseWithDuration: Exercise | undefined = useMemo(() => {
     if (!baseExercise) return undefined;
     const sec = Number(params.duration);
@@ -77,20 +103,33 @@ export default function WorkoutSessionScreen() {
     return baseExercise;
   }, [baseExercise, params.duration]);
 
-  // Fire start once on mount with seconds for the orchestrator
+  // Emit workout-start exactly once per screen mount with seconds
+  const startedRef = useRef(false);
   useEffect(() => {
-    if (!exerciseWithDuration) return;
+    if (!exerciseWithDuration || startedRef.current) return;
+
     const secFromQuery = Number(params.duration);
-    const durationSec = Number.isFinite(secFromQuery) && secFromQuery > 0
-      ? Math.round(secFromQuery)
-      : Math.max(1, Math.round((exerciseWithDuration.duration || 0) * 60));
+    const durationSec =
+      Number.isFinite(secFromQuery) && secFromQuery > 0
+        ? Math.round(secFromQuery)
+        : Math.max(1, Math.round((exerciseWithDuration.duration || 0) * 60));
+
+    const kind = classifyContentKind(exerciseWithDuration);
+
+    // Emit with rich detail so the Player can route BGM reliably
     dispatchGlobalEvent("feelFit:workout-start", {
       duration: durationSec,
-      exerciseId: exerciseWithDuration.id,
+      exerciseId: exerciseWithDuration.id,              // exact id for EXERCISES lookup on Player
+      workout: exerciseWithDuration.name ?? exerciseWithDuration.id, // heuristic seed ("yoga", etc.)
+      type: kind ?? (exerciseWithDuration as any)?.category ?? "",    // extra hint for fuzzy fallback
+      audioType: kind ?? "",                             // explicit for any future consumers
       mode: params.mode,
       origin: "workout/session",
       platform: Platform.OS,
     });
+
+    startedRef.current = true;
+
     return () => {
       dispatchGlobalEvent("feelFit:workout-finish", { origin: "session:unmount" });
     };

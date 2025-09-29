@@ -3,7 +3,7 @@
 // + CoachAutoCues mount (speaks on start/middle/nearEnd/completion)
 // + Auto-switch BGM on workout-start (healing <-> motivational)
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, View, Text, Pressable, StyleSheet, Platform } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,6 +16,7 @@ import {
 } from "@/utils/voiceProfiles";
 import { playWorkoutAudio, stopAudio } from "@/utils/audio";
 import CoachAutoCues from "@/components/CoachAutoCues";
+import { EXERCISES } from "@/data/exercises";
 
 // ---- Types (loose) ----
 type FeelFitEngine = {
@@ -112,37 +113,45 @@ const styleToContent = (s: VoiceStyle): ContentKind => {
 // ---- Provider / voice helpers ----
 const getEnvKey = (): string | undefined =>
   (process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY as string | undefined) ||
-  (process.env.ELEVENLABS_API_KEY as string | undefined);
+  (process.env.ELEVENLABS_API_KEY as string | undefined) ||
+  (process.env.EXPO_PUBLIC_POLLY_URL as string | undefined);
+
 const getSavedVoiceIdOverride = (): string | undefined => {
   try {
     if (typeof localStorage !== "undefined") {
-      const v = localStorage.getItem("tts.voiceId.v1");
+      const v = localStorage.getItem("tts.voiceId.v1"); // keep current key to avoid breaking UI
       if (v && v.trim()) return v.trim();
     }
   } catch {}
   return undefined;
 };
 
-// ---- Workout→content routing (fuzzy match) ----
+// ---- Workout→content routing ----
+// 1) explicit by exerciseId via EXERCISES.audioType (preferred)
+// 2) fallback fuzzy buckets
 const HEALING_HINTS = ["breath", "breathing", "medit", "yoga", "stretch", "calm", "relax", "recovery"];
 const MOTIVE_HINTS = ["hiit", "run", "cardio", "strength", "power", "workout", "motive", "speed", "intense"];
 
 function resolveWorkoutContent(detail: any): ContentKind | null {
-  const raw =
+  // explicit mapping
+  const exId = String(
     (detail?.exerciseId as string | undefined) ||
-    (detail?.workout as string | undefined) ||
-    (detail?.type as string | undefined) ||
-    "";
-  const s = String(raw).toLowerCase();
-
-  if (!s) return null;
-
-  // explicit mapping first if needed later…
+      (detail?.workout as string | undefined) ||
+      ""
+  ).trim();
+  if (exId) {
+    try {
+      const ex = EXERCISES.find((e: any) => e?.id?.toLowerCase?.() === exId.toLowerCase());
+      const at = ex?.audioType;
+      if (at === "healing" || at === "motivational") return at as ContentKind;
+    } catch {}
+  }
 
   // fuzzy buckets
+  const s = (exId || String(detail?.type || "")).toLowerCase();
+  if (!s) return null;
   if (HEALING_HINTS.some((k) => s.includes(k))) return "healing";
   if (MOTIVE_HINTS.some((k) => s.includes(k))) return "motivational";
-
   return null;
 }
 
@@ -226,7 +235,7 @@ export default function PlayerTab() {
     };
   }, []);
 
-  // Preload mixer on mount (web) so polling/controls are live even before Start BGM
+  // Preload mixer on mount (web)
   useEffect(() => {
     void ensureMixer();
   }, []);
@@ -283,11 +292,18 @@ export default function PlayerTab() {
     return () => clearInterval(id);
   }, []);
 
-  // helper: apply playlist for a given content kind (healing/motivational)
+  // --- Playlist application ---
+  const lastAppliedRef = useRef<ContentKind | null>(null);
+
   const applyPlaylistFor = async (kind: ContentKind) => {
     const m = await ensureMixer();
     if (!m) return;
 
+    // prevent redundant re-apply of the same kind
+    if (lastAppliedRef.current === kind) return;
+    lastAppliedRef.current = kind;
+
+    // Dedicated keys by kind (read-only). If empty, provide defaults.
     const selKey = kind === "healing" ? "healing.selection.v1" : "motivational.selection.v1";
     const shufKey = kind === "healing" ? "healing.shuffle.v1" : "motivational.shuffle.v1";
 
@@ -306,11 +322,11 @@ export default function PlayerTab() {
           : ["/audio/motive/motivation-motivational-background-music-292747.mp3"];
     }
 
-    // force re-queue to ensure immediate switch
-    await Promise.resolve(m.stop());
+    // Force re-queue to ensure immediate switch
+    try { m.stop(); } catch {}
     await Promise.resolve(m.setTracks({ tracks, shuffle }));
     await Promise.resolve(m.play());
-    // small nudge if sticky
+    // optional nudge for browsers that stick to first buffer
     try { m.next?.(); } catch {}
   };
 
@@ -342,7 +358,7 @@ export default function PlayerTab() {
     setMixVol(nv);
   };
 
-  // NEW: Auto-switch BGM when a workout starts (event-driven)
+  // Auto-switch BGM on workout-start
   useEffect(() => {
     if (Platform.OS !== "web") return;
 
@@ -352,7 +368,6 @@ export default function PlayerTab() {
     const onWorkoutStart = (ev: any) => {
       const kind = resolveWorkoutContent(ev?.detail);
       if (!kind) return;
-      // voice styleは別経路で更新される前提。BGMはここで即切替。
       void applyPlaylistFor(kind);
     };
 
