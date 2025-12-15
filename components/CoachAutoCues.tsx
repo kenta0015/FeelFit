@@ -1,8 +1,7 @@
 // components/CoachAutoCues.tsx
 // Auto voice cues + full instructions queue (start → instructions → middle/nearEnd/finish)
-// Uses existing playWorkoutAudio/stopAudio for encouragement cues.
-// Instructions are spoken via web TTS (TTSService.web.synthesize) with Joanna/Matthew by audioType.
-// On native, falls back to encouragement cues only (no instruction TTS).
+// Encouragement: exercise/audioType ベース（healing→Joanna / motivational→Matthew は utils/audio 側）
+// Instructions: Salli（ニュートラル, tone 付与なし）
 
 import * as React from "react";
 import { Platform } from "react-native";
@@ -22,29 +21,27 @@ function getWin(): any {
   return typeof window !== "undefined" ? window : (globalThis as any);
 }
 
+// UIのStyleは最終フォールバックのみで使用
 function styleToContent(s: VoiceStyle): ContentKind {
   if (s === "Calm" || s === "Gentle" || s === "Focus" || s === "Neutral") return "healing";
   return "motivational";
 }
 
-function audioTypeToKind(at?: string | null): ContentKind | null {
-  const v = (at || "").toLowerCase();
-  if (v === "healing") return "healing";
-  if (v === "motivational") return "motivational";
+function toKind(v?: string | null): ContentKind | null {
+  const s = (v || "").toLowerCase();
+  if (s === "healing") return "healing";
+  if (s === "motivational") return "motivational";
   return null;
 }
 
-function kindToDefaultVoice(k: ContentKind): string {
-  return k === "healing" ? "Joanna" : "Matthew"; // en-US
-}
-
 export default function CoachAutoCues({ style, gender }: Props): null {
-  const contentByStyle = React.useMemo(() => styleToContent(style), [style]);
+  const fallbackKind = React.useMemo(() => styleToContent(style), [style]);
 
-  // ---- Simple serial queue (one-at-a-time) ----
+  // ---- serial queue ----
   const qRef = React.useRef<(() => Promise<void>)[]>([]);
   const busyRef = React.useRef(false);
   const abortedRef = React.useRef(false);
+  const lastKindRef = React.useRef<ContentKind | null>(null);
 
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
@@ -53,11 +50,7 @@ export default function CoachAutoCues({ style, gender }: Props): null {
     const next = qRef.current.shift();
     if (!next) return;
     busyRef.current = true;
-    try {
-      await next();
-    } catch {
-      // swallow
-    } finally {
+    try { await next(); } finally {
       busyRef.current = false;
       if (!abortedRef.current) void runNext();
     }
@@ -67,77 +60,50 @@ export default function CoachAutoCues({ style, gender }: Props): null {
     abortedRef.current = true;
     qRef.current = [];
     busyRef.current = false;
-    // stop any current instruction audio
-    try {
-      audioRef.current?.pause?.();
-      audioRef.current && (audioRef.current.currentTime = 0);
-    } catch {}
+    try { audioRef.current?.pause?.(); if (audioRef.current) audioRef.current.currentTime = 0; } catch {}
     stopAudio();
-    // small async tick to re-enable queue
     setTimeout(() => (abortedRef.current = false), 0);
   }, []);
 
-  // ---- Helpers to enqueue tasks ----
   const enqueueEncouragement = React.useCallback((phase: Phase, kind: ContentKind) => {
     qRef.current.push(async () => {
-      // ensure no overlap
       stopAudio();
       const w = getWin();
-      try {
-        // wait for "voice-end" once playWorkoutAudio finishes
-        const done = new Promise<void>((resolve) => {
-          const onEnd = () => {
-            w.removeEventListener("feelFit:voice-end", onEnd as EventListener);
-            resolve();
-          };
-          w.addEventListener("feelFit:voice-end", onEnd as EventListener, { once: true });
-          // safety timeout (6s) to avoid deadlock
-          setTimeout(() => {
-            w.removeEventListener("feelFit:voice-end", onEnd as EventListener);
-            resolve();
-          }, 6000);
-        });
-        playWorkoutAudio(phase, kind, gender);
-        await done;
-      } catch {
-        // ignore
-      }
+      // voice-end を待ってから次へ
+      const done = new Promise<void>((resolve) => {
+        const onEnd = () => { w.removeEventListener("feelFit:voice-end", onEnd as EventListener); resolve(); };
+        w.addEventListener("feelFit:voice-end", onEnd as EventListener, { once: true });
+        setTimeout(() => { w.removeEventListener("feelFit:voice-end", onEnd as EventListener); resolve(); }, 6000);
+      });
+      playWorkoutAudio(phase, kind, gender);
+      await done;
     });
   }, [gender]);
 
-  const enqueueInstruction = React.useCallback((line: string, voiceId: string) => {
-    // web only (uses TTSService.web)
+  const enqueueInstruction = React.useCallback((line: string) => {
     if (Platform.OS !== "web") return;
     qRef.current.push(async () => {
       const w = getWin();
       try {
-        // dynamic import to avoid native bundling
         const { synthesize } = await import("@/audio/TTSService.web");
-        // NOTE: tone=healing|motivational will be added in Step2 (TTSService patch)
-        const res = await synthesize(line, voiceId, {});
+        // Salli 固定・tone等は一切付与しない
+        const res = await synthesize(line, "Salli", {});
         if (!res?.uri) return;
-        // emit ducking hooks for mixer
-        try {
-          w.dispatchEvent?.(new CustomEvent("feelFit:voice-start", { detail: { source: "instructions" } }));
-        } catch {}
-        // play audio
+
+        try { w.dispatchEvent?.(new CustomEvent("feelFit:voice-start", { detail: { source: "instructions" } })); } catch {}
         const a = new Audio(res.uri!);
         audioRef.current = a;
         await new Promise<void>((resolve) => {
           a.addEventListener("ended", () => resolve(), { once: true });
           a.addEventListener("error", () => resolve(), { once: true });
-          // small gapless start
           a.play().catch(() => resolve());
         });
       } finally {
-        try {
-          w.dispatchEvent?.(new CustomEvent("feelFit:voice-end", { detail: { source: "instructions" } }));
-        } catch {}
+        try { w.dispatchEvent?.(new CustomEvent("feelFit:voice-end", { detail: { source: "instructions" } })); } catch {}
       }
     });
   }, []);
 
-  // ---- Event wiring ----
   React.useEffect(() => {
     const w = getWin();
     if (!w?.addEventListener) return;
@@ -145,49 +111,36 @@ export default function CoachAutoCues({ style, gender }: Props): null {
     const onStart = (ev: any) => {
       clearQueue();
 
-      // Determine exercise & kind
       const detail = ev?.detail || {};
       const exId: string | undefined = detail.exerciseId || detail.id;
-      const exercise = exId ? EXERCISES.find((e: any) => e?.id === exId) : undefined;
-      const kind =
-        audioTypeToKind(detail.audioType) ||
-        audioTypeToKind(exercise?.audioType) ||
-        contentByStyle;
+      const ex = exId ? EXERCISES.find((e: any) => e?.id === exId) : undefined;
 
-      const voiceId = kindToDefaultVoice(kind);
+      // 種別の決定順序： detail.audioType → exercise.audioType → UI Style
+      const kind: ContentKind =
+        toKind(detail.audioType) ||
+        toKind(ex?.audioType) ||
+        fallbackKind;
 
-      // 1) Encouragement: start
+      lastKindRef.current = kind;
+
+      // 1) start の励まし（種別固定で呼ぶ）
       enqueueEncouragement("start", kind);
 
-      // 2) Full instructions (if any)
-      const lines: string[] = Array.isArray(exercise?.instructions) ? exercise!.instructions : [];
+      // 2) インスト（Salli / neutral）
+      const lines: string[] = Array.isArray(ex?.instructions) ? ex!.instructions : [];
       for (const line of lines) {
         const txt = String(line || "").trim();
-        if (!txt) continue;
-        enqueueInstruction(txt, voiceId);
+        if (txt) enqueueInstruction(txt);
       }
 
-      // Start the queue
       void runNext();
     };
 
-    // middle/nearEnd/completion → 順延（queueへ）
-    const onMiddle = () => {
-      // pick style at runtime (closest intent)
-      const k = contentByStyle;
-      enqueueEncouragement("middle", k);
-      void runNext();
-    };
-    const onNearEnd = () => {
-      const k = contentByStyle;
-      enqueueEncouragement("nearEnd", k);
-      void runNext();
-    };
-    const onCompletion = () => {
-      const k = contentByStyle;
-      enqueueEncouragement("completion", k);
-      void runNext();
-    };
+    const resolveKind = (): ContentKind => lastKindRef.current || fallbackKind;
+
+    const onMiddle = () => { enqueueEncouragement("middle", resolveKind()); void runNext(); };
+    const onNearEnd = () => { enqueueEncouragement("nearEnd", resolveKind()); void runNext(); };
+    const onCompletion = () => { enqueueEncouragement("completion", resolveKind()); void runNext(); };
 
     w.addEventListener("feelFit:workout-start", onStart as EventListener);
     w.addEventListener("feelFit:workout-middle", onMiddle as EventListener);
@@ -201,8 +154,7 @@ export default function CoachAutoCues({ style, gender }: Props): null {
       w.removeEventListener("feelFit:workout-completion", onCompletion as EventListener);
       clearQueue();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contentByStyle, enqueueEncouragement, enqueueInstruction, runNext, clearQueue, gender]);
+  }, [fallbackKind, enqueueEncouragement, enqueueInstruction, runNext, clearQueue]);
 
   return null;
 }

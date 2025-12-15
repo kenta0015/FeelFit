@@ -1,5 +1,5 @@
 // app/(tabs)/suggestion.tsx
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -11,6 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 
 import type { Plan } from '@/types/plan';
 import SuggestionCard from '@/components/SuggestionCard';
@@ -19,6 +20,8 @@ import CoachNote from '@/features/dailySummary/CoachNote';
 
 import { usePlanSuggestion, type SuggestionCtx } from '@/hooks/usePlanSuggestion';
 import { shouldRecommendRecovery } from '@/logic/recovery';
+import { getPendingActions } from '@/state/coachActions';
+import type { CoachAction } from '@/types/coach';
 
 const TIME_CHOICES = [10, 15, 20, 30];
 
@@ -35,6 +38,10 @@ export default function SuggestionTab() {
   const [manualTime, setManualTime] = useState<number | undefined>(undefined);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
+  // Coach-driven soft constraints（スタイル）
+  const [coachIndoorOnly, setCoachIndoorOnly] = useState(false);
+  const [coachGentleJoints, setCoachGentleJoints] = useState(false); // low-impact フラグ
+
   // --- Context for the suggestion hook
   const ctx: SuggestionCtx = useMemo(() => {
     return {
@@ -43,11 +50,14 @@ export default function SuggestionTab() {
       emotion: null,
       intensityPref: undefined,
       equipment: [],
-      constraints: [],
+      constraints: [], // ハード除外は今は使わない
       disliked: [],
       readiness: undefined,
+      // Coach からのスタイル制約を ranker に渡す
+      indoorOnly: coachIndoorOnly,
+      lowImpactOnly: coachGentleJoints,
     };
-  }, [manualTime]);
+  }, [manualTime, coachIndoorOnly, coachGentleJoints]);
 
   // --- Compute plan suggestion
   const { plan, recommendedTime, isUncertainDay } = usePlanSuggestion(ctx);
@@ -80,11 +90,60 @@ export default function SuggestionTab() {
       manualTime,
       activeTime,
       blocks: plan?.blocks?.length ?? 0,
+      coachIndoorOnly,
+      coachGentleJoints,
       ...(extra || {}),
     };
     // eslint-disable-next-line no-console
     console.log('[SuggestionTab]', payload);
   };
+
+  // --- Apply pending Coach actions（Coach Q&A → Suggestion への一方向ブリッジ）
+  // IMPORTANT: Tabs often keep screens mounted → we must read pending actions on EVERY focus.
+  useFocusEffect(
+    useCallback(() => {
+      const actions = getPendingActions();
+      if (!actions || !actions.length) return;
+
+      // eslint-disable-next-line no-console
+      console.log('[SuggestionTab] pending Coach actions:', actions);
+
+      actions.forEach((action: CoachAction) => {
+        switch (action.type) {
+          case 'applyTime': {
+            if (typeof action.minutes === 'number') {
+              // TIME_CHOICES に含まれていなくても、とりあえず反映しておく
+              setManualTime(action.minutes);
+              logEvent('apply_time_from_coach', { minutes: action.minutes });
+            }
+            break;
+          }
+          case 'replaceStyle': {
+            if (action.style === 'indoor') {
+              setCoachIndoorOnly(true);
+              logEvent('coach_replace_style_indoor', { action });
+            } else if (action.style === 'low-impact') {
+              setCoachGentleJoints(true);
+              logEvent('coach_replace_style_gentle_joints', { action });
+            } else {
+              // eslint-disable-next-line no-console
+              console.log('[SuggestionTab] replaceStyle (unsupported style):', action);
+            }
+            break;
+          }
+          case 'swapBlock': {
+            // まだ未実装：とりあえずログだけ
+            // eslint-disable-next-line no-console
+            console.log('[SuggestionTab] Coach swapBlock not implemented yet:', action);
+            break;
+          }
+          default:
+            // eslint-disable-next-line no-console
+            console.log('[SuggestionTab] Unknown Coach action:', action);
+        }
+      });
+    }, [recommendedTime, manualTime, activeTime, plan, coachIndoorOnly, coachGentleJoints])
+  );
 
   // ===== navigation handlers =====
   const handleViewHistory = () => {
@@ -125,6 +184,7 @@ export default function SuggestionTab() {
     setRefreshNonce((n) => n + 1);
   };
 
+  // Time chip selection
   const selectTime = (t: number) => {
     setManualTime(t);
     logEvent('select_time', { t });
@@ -137,7 +197,6 @@ export default function SuggestionTab() {
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container}>
-
         {/* ─ Coach Note（今日の一言） ─ */}
         <View style={styles.section}>
           <CoachNote

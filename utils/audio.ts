@@ -1,8 +1,10 @@
 // utils/audio.ts
 // Web-first Polly TTS (via Lambda) with ElevenLabs fallback (if key exists) and device TTS fallback (expo-speech).
 // Emits feelFit:voice-start / feelFit:voice-end with de-dup guard (single end per session).
-// Applies Voice Style from localStorage "tts.style.v1" + "tts.gender.v1".
-// Auto persona → Polly voiceId mapping: healing↔Calm / motivational↔Passion.
+// Encouragement voice mapping (fixed):
+//   - healing  → Joanna（tone=healing：slower）
+//   - motivational → Matthew（tone=motivational：faster/louder）
+// Instructions (CoachAutoCues) are handled elsewhere and use Salli (neutral).
 
 import * as Speech from "expo-speech";
 import { emitFeelFit } from "@/utils/feelFitEvents";
@@ -94,7 +96,7 @@ const getPollyUrl = () =>
   (process.env.EXPO_PUBLIC_POLLY_URL as string | undefined) ||
   (process.env.POLLY_URL as string | undefined);
 
-// -------- read saved prefs --------
+// -------- read saved prefs (used for device/Eleven fallback only) --------
 function getSavedStyle(): VoiceStyle {
   try {
     if (typeof localStorage !== "undefined") {
@@ -153,37 +155,41 @@ function cleanupWebAudio() {
   currentWebAudioUrl = null;
 }
 
-// -------- Persona → Polly voiceId mapping --------
+// -------- Encouragement voice mapping (fixed) --------
 type ContentType = "healing" | "motivational";
-const VOICE_BY_PERSONA: Record<ContentType, Record<Gender, string>> = {
-  healing: { female: "Joanna", male: "Matthew" },        // calm, warm
-  motivational: { female: "Salli", male: "Joey" },       // bright/energetic
+const ENCOURAGE_VOICE: Record<ContentType, string> = {
+  healing: "Joanna",
+  motivational: "Matthew",
 };
-// engine: prefer neural for these voices
 const POLLY_ENGINE = "neural" as const;
-
-// Map style → content (already used across app)
-function styleToContent(s: VoiceStyle): ContentType {
-  if (s === "Calm" || s === "Gentle" || s === "Focus" || s === "Neutral") return "healing";
-  return "motivational";
-}
 
 // -------- Internal (web) Polly playback --------
 async function playWithPollyWeb(
   text: string,
   voiceId: string,
-  opts: { format?: "mp3" | "ogg"; engine?: "standard" | "neural" } = {}
+  opts: {
+    format?: "mp3" | "ogg";
+    engine?: "standard" | "neural";
+    tone?: "healing" | "motivational";
+    rate?: string;
+    volume?: string;
+    pitch?: string;
+  } = {}
 ) {
   const base = getPollyUrl();
   if (!isWeb || !base) throw new Error("no_polly_url_or_not_web");
 
-  const url =
-    `${base}?text=${encodeURIComponent(text)}` +
-    `&voiceId=${encodeURIComponent(voiceId)}` +
-    `&format=${encodeURIComponent(opts.format ?? "mp3")}` +
-    `&engine=${encodeURIComponent(opts.engine ?? POLLY_ENGINE)}`;
+  const urlObj = new URL(base);
+  urlObj.searchParams.set("text", text);
+  urlObj.searchParams.set("voiceId", voiceId);
+  urlObj.searchParams.set("format", opts.format ?? "mp3");
+  urlObj.searchParams.set("engine", opts.engine ?? POLLY_ENGINE);
+  if (opts.tone) urlObj.searchParams.set("tone", opts.tone);
+  if (opts.rate) urlObj.searchParams.set("rate", opts.rate);
+  if (opts.volume) urlObj.searchParams.set("volume", opts.volume);
+  if (opts.pitch) urlObj.searchParams.set("pitch", opts.pitch);
 
-  const res = await fetch(url, { method: "GET", headers: { Accept: "audio/mpeg" } });
+  const res = await fetch(urlObj.toString(), { method: "GET", headers: { Accept: "audio/mpeg" } });
   if (!res.ok) throw new Error(`polly_http_${res.status}`);
 
   const buf = await res.arrayBuffer();
@@ -268,20 +274,22 @@ async function playWithElevenLabsWeb(
 export const playWorkoutAudio = (
   phase: keyof MotivationalMessage,
   audioType: "healing" | "motivational",
-  voicePreference: "male" | "female" = "female"
+  _voicePreference: "male" | "female" = "female"
 ) => {
-  const messages = audioType === "healing" ? HEALING_MESSAGES[phase] : MOTIVATIONAL_MESSAGES[phase];
+  const messages =
+    audioType === "healing" ? HEALING_MESSAGES[phase] : MOTIVATIONAL_MESSAGES[phase];
   const text = messages[Math.floor(Math.random() * messages.length)];
 
-  const style = getSavedStyle();
-  const gender: Gender = getSavedGender(voicePreference);
+  // Saved style/gender are still used for device/Eleven fallback only
+  const style: VoiceStyle = getSavedStyle();
+  const gender: Gender = getSavedGender(_voicePreference);
 
-  // Prefer Polly when configured
+  // Prefer Polly when configured (fixed mapping + tone to adjust speed/volume server-side)
   const polly = getPollyUrl();
   if (isWeb && polly) {
-    const persona = styleToContent(style); // align with current UI style
-    const voiceId = VOICE_BY_PERSONA[persona]?.[gender] || VOICE_BY_PERSONA[audioType]?.[gender] || "Joanna";
-    playWithPollyWeb(text, voiceId, { format: "mp3", engine: POLLY_ENGINE }).catch(() => {
+    const voiceId = ENCOURAGE_VOICE[audioType]; // Joanna / Matthew 固定
+    const tone = audioType; // healing → slower / motivational → faster/louder (Lambda側でSSML適用)
+    playWithPollyWeb(text, voiceId, { format: "mp3", engine: POLLY_ENGINE, tone }).catch(() => {
       // fallback to device TTS on error
       const opts = toExpoSpeechOptions(style, gender);
       voiceStart("device-tts", { provider: "device-tts", fallback: true });
@@ -313,7 +321,7 @@ export const playWorkoutAudio = (
     return;
   }
 
-  // Native / no web keys → Expo Speech using style mapping
+  // Native / no web keys → Expo Speech using saved prefs
   const opts = toExpoSpeechOptions(style, gender);
   voiceStart("device-tts", { provider: "device-tts" });
   Speech.speak(text, {

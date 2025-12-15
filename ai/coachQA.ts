@@ -34,6 +34,27 @@ function parseActions(text: string) {
   return undefined;
 }
 
+// Strip any visible JSON / actions payload from the coach answer text
+export function stripActionsFromText(text: string): string {
+  if (!text) return text;
+
+  let result = text;
+
+  // 1) Remove fenced ```json ``` blocks (most common pattern)
+  result = result.replace(/```json[\s\S]*?```/gi, '').trim();
+
+  // 2) If there is still an inline "actions":[...] style payload, cut it off
+  const actionsMatchIndex = result.search(/["']actions["']\s*:/i);
+  if (actionsMatchIndex >= 0) {
+    // Try to cut from the nearest preceding '{' to avoid dangling braces in UI
+    const braceIndex = result.lastIndexOf('{', actionsMatchIndex);
+    const cutIndex = braceIndex >= 0 ? braceIndex : actionsMatchIndex;
+    result = result.slice(0, cutIndex).trim();
+  }
+
+  return result;
+}
+
 function heuristicFallback(q: string): CoachAnswer {
   const lc = q.toLowerCase();
   const actions: any[] = [];
@@ -75,7 +96,17 @@ export async function generateAnswer(
       max_tokens: 220,
     });
 
-    const actions = parseActions(text);
+    // 1) Try to parse actions from the raw LLM text
+    let actions = parseActions(text);
+
+    // 2) If none were found, fall back to heuristic rules to infer actions
+    if (!actions || !actions.length) {
+      const heuristic = heuristicFallback(q);
+      if (heuristic.actions && heuristic.actions.length) {
+        actions = heuristic.actions;
+      }
+    }
+
     return { text, actions, cache: { used: 'openai' } };
   } catch {
     // Fallback (offline / key missing)

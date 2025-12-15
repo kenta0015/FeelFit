@@ -1,20 +1,20 @@
-// hooks/useCoachQA.ts
+/// hooks/useCoachQA.ts
 // Local state + ask() for Coach Q&A thread (per day + plan signature).
 import { useCallback, useMemo, useState } from 'react';
 import type { Plan } from '@/types/plan';
 import type { SuggestionCtx } from '@/hooks/usePlanSuggestion';
-import { generateAnswer } from '@/ai/coachQA';
+import { generateAnswer, stripActionsFromText } from '@/ai/coachQA';
 import type { CoachMessage, CoachQAPrompt, ThreadKey } from '@/types/coach';
 
 function todayISO(): string {
   const d = new Date();
-  return d.toISOString().slice(0,10); // YYYY-MM-DD
+  return d.toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
 function hashString(s: string): string {
   // Fast non-crypto hash (djb2)
   let h = 5381;
-  for (let i=0; i<s.length; i++) h = ((h << 5) + h) + s.charCodeAt(i);
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h) + s.charCodeAt(i);
   return (h >>> 0).toString(36);
 }
 
@@ -27,7 +27,7 @@ function planSignature(plan: Plan): string {
   return hashString(JSON.stringify(core));
 }
 
-export function useCoachQA({ plan, ctx }:{ plan: Plan; ctx: SuggestionCtx }) {
+export function useCoachQA({ plan, ctx }: { plan: Plan; ctx: SuggestionCtx }) {
   const thread: ThreadKey = useMemo(() => ({
     date: todayISO(),
     planSig: planSignature(plan)
@@ -41,15 +41,25 @@ export function useCoachQA({ plan, ctx }:{ plan: Plan; ctx: SuggestionCtx }) {
     const text = prompt.kind === 'preset' ? prompt.label : (prompt.text || '').trim();
     if (!text) return;
 
-    const userMsg: CoachMessage = { id: hashString(thread.date + text + Math.random()), role: 'user', text, ts: Date.now() };
+    const userMsg: CoachMessage = {
+      id: hashString(thread.date + text + Math.random()),
+      role: 'user',
+      text,
+      ts: Date.now()
+    };
     setMessages(prev => [...prev, userMsg]);
     setBusy(true);
     try {
       const ans = await generateAnswer(plan, ctx, messages, prompt);
+
+      console.log('[useCoachQA] ans.actions =', ans.actions);
+
+      const displayText = stripActionsFromText(ans.text);
+
       const coachMsg: CoachMessage = {
         id: hashString(thread.date + ans.text + Math.random()),
         role: 'coach',
-        text: ans.text,
+        text: displayText,
         ts: Date.now(),
         actions: ans.actions
       };

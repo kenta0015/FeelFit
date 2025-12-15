@@ -49,6 +49,7 @@ export default function CoachQACard({ plan, ctx }: Props) {
 
   const onApply = () => {
     const actions = lastCoach?.actions ?? [];
+    console.log('[CoachQACard] actions from lastCoach =', actions);
     setPendingActions(actions);
     router.navigate('/(tabs)/suggestion');
   };

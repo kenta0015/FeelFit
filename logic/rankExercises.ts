@@ -1,7 +1,8 @@
-// logic/rankExercises.ts
+// logic/rankExercises.ts 
 
 import type { Plan, PlanBlock } from '@/types/plan';
 import templates from '@/data/exerciseTemplates.json';
+import { getExerciseStyle } from '@/data/exerciseStyles';
 
 // ----------------------------
 // Types
@@ -69,14 +70,13 @@ function intensityBias(intensity: PlanBlock['intensity'], pref?: 'low' | 'med' |
 }
 
 function equipmentAllowed(block: any, available: string[]) {
-  // 明示的に string[] に整形してから Set を作る（TS の unknown 警告回避）
   const beq = asArray(block.equipment).map(normalizeStr);
   const bset = new Set<string>(beq);
   const hasNone = bset.has('none');
 
   const av = new Set<string>(asArray(available).map(normalizeStr));
 
-  // いずれか一致 or "none" で可能なら許可
+  // if "none" allowed or any equipment matches, allow
   if (hasNone) return true;
   for (const e of bset) {
     if (av.has(e)) return true;
@@ -151,7 +151,7 @@ function synthesizeTitle(blocks: PlanBlock[], totalTime: number): string {
     cardio: 'Light Cardio',
     strength: 'Strength',
     mindfulness: 'Mindfulness',
-    recovery: 'Recovery'
+    recovery: 'Recovery',
   };
   const labels = cats.slice(0, 2).map((c) => mapLabel[c] ?? c);
   const label = labels.join(' + ');
@@ -164,8 +164,26 @@ function synthesizeTitle(blocks: PlanBlock[], totalTime: number): string {
 
 export function rankExercises(ctx: Ctx): Ranked[] {
   const availableEq = asArray(ctx.equipment);
-  const constraints = asArray(ctx.constraints);
+
+  // Raw constraints / disliked from context
+  const allConstraints = asArray(ctx.constraints);
   const disliked = asArray(ctx.disliked);
+
+  // Coach-driven soft constraints
+  const coachIndoorOnly = allConstraints.some((c) => normalizeStr(c) === 'coach:indoor-only');
+  const coachGentleJoints = allConstraints.some((c) => normalizeStr(c) === 'coach:gentle-joints');
+
+  // Hard constraints should ignore coach tags (they are interpreted separately)
+  const constraints = allConstraints.filter(
+    (c) => !normalizeStr(c).startsWith('coach:')
+  );
+
+  // Debug: confirm how coach flags are seen here
+  // eslint-disable-next-line no-console
+  console.log('[rankExercises] constraints =', allConstraints, {
+    coachIndoorOnly,
+    coachGentleJoints,
+  });
 
   // 1) map templates to Ranked with base score
   let ranked: Ranked[] = (templates as any[]).map((t) => {
@@ -175,7 +193,7 @@ export function rankExercises(ctx: Ctx): Ranked[] {
       duration: Number(t.duration),
       met: Number(t.met),
       intensity: t.intensity,
-      category: t.category
+      category: t.category,
     };
 
     // Base: MET * duration * 0.9
@@ -191,6 +209,36 @@ export function rankExercises(ctx: Ctx): Ranked[] {
 
     // Load modifiers
     score *= monotonyStrainMultiplier(t, ctx);
+
+    // Coach-driven style modifiers (indoor only / gentle on joints)
+    if (coachIndoorOnly || coachGentleJoints) {
+      const style = getExerciseStyle(String(t.id));
+
+      // Debug: inspect a few key exercises under coach constraints
+      if (
+        t.id === 'card_brisk_walk_15' ||
+        t.id === 'card_jump_rope_10' ||
+        t.id === 'card_walk_liss_10'
+      ) {
+        // eslint-disable-next-line no-console
+        console.log('[rankExercises] style check', t.id, {
+          style,
+          coachIndoorOnly,
+          coachGentleJoints,
+          scoreBeforePenalty: score,
+        });
+      }
+
+      if (coachIndoorOnly && style.environment === 'outdoor') {
+        // Prefer indoor-friendly options
+        score *= 0.3;
+      }
+
+      if (coachGentleJoints && style.impact === 'high') {
+        // Strongly down-rank high-impact exercises
+        score *= 0.3;
+      }
+    }
 
     return { ...block, score };
   });
@@ -232,7 +280,7 @@ export function buildPlan(ranked: Ranked[], timeAvailable: number): Plan {
         duration: r.duration,
         met: r.met,
         intensity: r.intensity,
-        category: r.category
+        category: r.category,
       });
       acc += r.duration;
     }
@@ -256,7 +304,7 @@ export function buildPlan(ranked: Ranked[], timeAvailable: number): Plan {
         duration: pick.duration,
         met: pick.met,
         intensity: pick.intensity,
-        category: pick.category
+        category: pick.category,
       });
       acc = pick.duration;
     }
@@ -269,6 +317,7 @@ export function buildPlan(ranked: Ranked[], timeAvailable: number): Plan {
     title,
     blocks,
     totalTime: acc,
-    why
+    why,
   };
 }
+

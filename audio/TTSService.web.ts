@@ -1,7 +1,6 @@
 // audio/TTSService.web.ts
-// Web — Blob URL memory cache + browser speechSynthesis fallback (no expo-file-system)
-// Provider order: AWS Polly (if EXPO_PUBLIC_POLLY_URL) → ElevenLabs (if key) → device TTS
-// Added: tone support for Polly (healing/motivational) + neural engine by default.
+// Web — Blob URL cache + Polly Function URL（最優先）→ ElevenLabs（キー有時）→ device TTS
+// 変更点：opts.tone が指定された時だけ tone を送る。自動推定は行わない（＝デフォルトは常にニュートラル）
 
 import * as Crypto from "expo-crypto";
 import { log } from "../lib/logger";
@@ -16,18 +15,17 @@ export type TTSOptions = {
   style?: number;
   speakerBoost?: boolean;
   outputFormat?: "mp3_44100_128" | "mp3_44100_64" | "mp3_22050_32";
-  // Polly extensions
-  tone?: TTSTone;        // healing | motivational
-  rate?: string;         // e.g. "85%"
-  pitch?: string;        // e.g. "-1st" (Lambda will drop for neural if unsupported)
-  volume?: string;       // e.g. "medium"
+  tone?: TTSTone;        // 明示指定時のみ送信
+  rate?: string;
+  pitch?: string;
+  volume?: string;
   sampleRate?: string | number;
 };
 
 export type TTSResult = {
   key: string;
-  uri: string | null; // blob:...
-  source: Source;     // keep union as-is for compatibility
+  uri: string | null;
+  source: Source;
   cached: boolean;
   fallbackUsed: boolean;
 };
@@ -48,7 +46,7 @@ const POLLY_DEFAULT_VOICE =
 const DEFAULT_MODEL = "eleven_multilingual_v2";
 const DEFAULT_FORMAT: NonNullable<TTSOptions["outputFormat"]> = "mp3_44100_128";
 
-const memoryCache = new Map<string, string>(); // key -> blob url
+const memoryCache = new Map<string, string>();
 
 async function cacheKey(script: string, voiceId: string) {
   const h = await Crypto.digestStringAsync(
@@ -70,23 +68,12 @@ function speakFallback(text: string) {
 }
 
 function toPollyFormat(_: TTSOptions["outputFormat"] | undefined) {
-  // Lambda supports mp3|ogg_vorbis|pcm → map any Eleven mp3_* to 'mp3'
   return "mp3";
 }
 
 function toPollyVoice(voiceId: string) {
-  // If the incoming voiceId looks like an ElevenLabs UUID-ish string, use default Polly voice.
   const looksLikeEleven = /[0-9a-f]{8}-[0-9a-f]{4}/i.test(voiceId) || voiceId.length > 24;
-  return looksLikeEleven ? POLLY_DEFAULT_VOICE : voiceId || POLLY_DEFAULT_VOICE;
-}
-
-function inferToneFromVoice(voiceId: string): TTSTone | undefined {
-  const v = (voiceId || "").toLowerCase();
-  // Healing-leaning voices
-  if (["joanna", "amy", "salli", "ivy", "kimberly"].includes(v)) return "healing";
-  // Motivational-leaning voices
-  if (["matthew", "brian", "joey", "justin"].includes(v)) return "motivational";
-  return undefined;
+  return looksLikeEleven ? POLLY_DEFAULT_VOICE : (voiceId || POLLY_DEFAULT_VOICE);
 }
 
 export async function synthesize(
@@ -98,35 +85,29 @@ export async function synthesize(
   log("tts:start", { key, voiceId, len: script.length });
 
   const hit = memoryCache.get(key);
-  if (hit) {
-    log("tts:cache_hit", { key });
-    return { key, uri: hit, source: "cache", cached: true, fallbackUsed: false };
-  }
+  if (hit) return { key, uri: hit, source: "cache", cached: true, fallbackUsed: false };
 
-  // 1) Try AWS Polly via Function URL (neural + tone)
+  // 1) Polly
   if (POLLY_URL) {
     try {
       const pollyVoice = toPollyVoice(voiceId);
       const fmt = toPollyFormat(opts.outputFormat);
-      const tone = opts.tone || inferToneFromVoice(pollyVoice);
 
       const qs = new URLSearchParams();
       qs.set("text", script);
       qs.set("voiceId", pollyVoice);
       qs.set("format", fmt);
       qs.set("engine", "neural");
-      if (tone) qs.set("tone", tone);
+      // 明示指定時のみ送る（デフォルト中立）
+      if (opts.tone) qs.set("tone", opts.tone);
       if (opts.rate) qs.set("rate", String(opts.rate));
       if (opts.volume) qs.set("volume", String(opts.volume));
-      if (opts.pitch) qs.set("pitch", String(opts.pitch)); // Lambda will strip for neural if needed
+      if (opts.pitch) qs.set("pitch", String(opts.pitch));
       if (opts.sampleRate) qs.set("sampleRate", String(opts.sampleRate));
 
       const url = `${POLLY_URL.replace(/\/+$/, "")}/?${qs.toString()}`;
 
-      const res = await fetch(url, {
-        method: "GET",
-        headers: { Accept: "audio/mpeg" },
-      });
+      const res = await fetch(url, { method: "GET", headers: { Accept: "audio/mpeg" } });
       if (!res.ok) {
         const t = await res.text().catch(() => "");
         throw new Error(`polly_http_${res.status}: ${t.slice(0, 200)}`);
@@ -136,22 +117,17 @@ export async function synthesize(
       const blob = new Blob([buf], { type: "audio/mpeg" });
       const blobUrl = URL.createObjectURL(blob);
       memoryCache.set(key, blobUrl);
-      log("tts:polly_ok", {
-        key,
-        bytes: (buf as ArrayBuffer).byteLength,
-        voice: pollyVoice,
-        tone: tone ?? null,
-      });
+      log("tts:polly_ok", { key, bytes: (buf as ArrayBuffer).byteLength, voice: pollyVoice, tone: opts.tone ?? null });
 
-      // NOTE: keep source as 'elevenlabs' for compatibility with existing checks
+      // 互換のため 'elevenlabs' を維持
       return { key, uri: blobUrl, source: "elevenlabs", cached: false, fallbackUsed: false };
     } catch (e) {
       log("tts:polly_fail", { key, error: String(e) });
-      // fall through to ElevenLabs/device
+      // fallthrough
     }
   }
 
-  // 2) ElevenLabs (legacy)
+  // 2) ElevenLabs
   try {
     if (!ELEVEN_API_KEY) throw new Error("missing_api_key");
 
@@ -192,7 +168,7 @@ export async function synthesize(
 
     return { key, uri: blobUrl, source: "elevenlabs", cached: false, fallbackUsed: false };
   } catch (e) {
-    // 3) Device TTS fallback
+    // 3) Device TTS
     speakFallback(script);
     log("tts:fallback_device", { key, error: String(e) });
     return {
@@ -214,9 +190,7 @@ export async function clearOne(script: string, voiceId: string) {
   const key = await cacheKey(script, voiceId);
   const url = memoryCache.get(key);
   if (url) {
-    try {
-      URL.revokeObjectURL(url);
-    } catch {}
+    try { URL.revokeObjectURL(url); } catch {}
     memoryCache.delete(key);
   }
   log("tts:clear_one", { key });
@@ -224,9 +198,7 @@ export async function clearOne(script: string, voiceId: string) {
 
 export async function purgeAll() {
   for (const [, url] of memoryCache) {
-    try {
-      URL.revokeObjectURL(url);
-    } catch {}
+    try { URL.revokeObjectURL(url); } catch {}
   }
   memoryCache.clear();
   log("tts:purge_all");

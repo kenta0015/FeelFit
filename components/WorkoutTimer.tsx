@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Play, Pause, Square, RotateCcw } from 'lucide-react-native';
 import { Exercise } from '@/types';
-import { playWorkoutAudio } from '@/utils/audio';
+// import { playWorkoutAudio } from '@/utils/audio';
 import { emitFeelFit } from '@/utils/feelFitEvents';
 import { onMany } from '@/utils/feelFitEvents';
 
@@ -18,7 +18,7 @@ export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePref
   const [timeLeft, setTimeLeft] = useState(exercise.duration * 60); // Convert to seconds
   const [isRunning, setIsRunning] = useState(false);
 
-  // ✅ 型エラー修正：ReturnType<typeof setInterval> を使用
+  // ✅ Typed interval reference
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const totalTime = exercise.duration * 60;
@@ -54,7 +54,6 @@ export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePref
       }
     );
     return off;
-    // totalTime only (exercise duration change resets listener state naturally)
   }, [totalTime]);
 
   useEffect(() => {
@@ -63,19 +62,20 @@ export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePref
         setTimeLeft(prev => {
           const newTime = prev - 1;
 
-          // Play motivational audio at key moments
+          // Progress calculation (audio cues moved to CoachAutoCues)
           const progressPercent = ((totalTime - newTime) / totalTime) * 100;
 
-          if (newTime === totalTime - 5) {
-            // Start message (5 seconds in)
-            playWorkoutAudio('start', exercise.audioType, voicePreference);
-          } else if (Math.abs(progressPercent - 50) < 1) {
-            // Middle message (around 50%)
-            playWorkoutAudio('middle', exercise.audioType, voicePreference);
-          } else if (newTime === 10) {
-            // Near end message (10 seconds left)
-            playWorkoutAudio('nearEnd', exercise.audioType, voicePreference);
-          }
+          // Play motivational audio at key moments (now handled by CoachAutoCues via events)
+          // if (newTime === totalTime - 5) {
+          //   // Start message (5 seconds in)
+          //   playWorkoutAudio('start', exercise.audioType, voicePreference);
+          // } else if (Math.abs(progressPercent - 50) < 1) {
+          //   // Middle message (around 50%)
+          //   playWorkoutAudio('middle', exercise.audioType, voicePreference);
+          // } else if (newTime === 10) {
+          //   // Near end message (10 seconds left)
+          //   playWorkoutAudio('nearEnd', exercise.audioType, voicePreference);
+          // }
 
           return newTime;
         });
@@ -93,21 +93,21 @@ export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePref
         intervalRef.current = null;
       }
     };
-    // 依存関係は元のまま（挙動変更なし）
   }, [isRunning, timeLeft, totalTime, voicePreference, exercise.audioType]);
 
   useEffect(() => {
     if (timeLeft === 0) {
       setIsRunning(false);
-      playWorkoutAudio('completion', exercise.audioType, voicePreference);
-      // ▼ イベント（Finish）
+      // Completion audio is now handled by CoachAutoCues via events
+      // playWorkoutAudio('completion', exercise.audioType, voicePreference);
+      // ▼ Event (Finish)
       emitFeelFit('workout-finish', { origin: 'workout-timer', completionPercentage: 100 });
       onComplete(100);
     }
   }, [timeLeft, onComplete, voicePreference, exercise.audioType]);
 
   const startTimer = () => {
-    // ▼ イベント（Start or Resume）
+    // ▼ Event (Start or Resume)
     if (timeLeft === totalTime) {
       emitFeelFit('workout-start', {
         origin: 'workout-timer',
@@ -126,7 +126,7 @@ export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePref
   };
 
   const pauseTimer = () => {
-    // ▼ イベント（Pause）
+    // ▼ Event (Pause)
     emitFeelFit('workout-pause', { origin: 'workout-timer' });
     setIsRunning(false);
   };
@@ -145,7 +145,7 @@ export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePref
         {
           text: 'Finish',
           onPress: () => {
-            // ▼ イベント（Finish）
+            // ▼ Event (Finish)
             emitFeelFit('workout-finish', { origin: 'workout-timer', completionPercentage });
             onComplete(completionPercentage);
           },
@@ -211,7 +211,7 @@ export default function WorkoutTimer({ exercise, onComplete, onCancel, voicePref
             <RotateCcw size={20} color="#6b7280" />
           </TouchableOpacity>
 
-        <TouchableOpacity style={styles.stopButton} onPress={stopWorkout}>
+          <TouchableOpacity style={styles.stopButton} onPress={stopWorkout}>
             <Square size={20} color="#dc2626" />
             <Text style={styles.stopButtonText}>Finish</Text>
           </TouchableOpacity>
