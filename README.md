@@ -1,6 +1,6 @@
 # Feel Fit — Emotion & Goal-Aware Fitness Coach
 
-A React Native (Expo) app that proposes the best workout for your time window and focus (Mental / Physical / Both), grounded in MET intensity and enhanced by AI coaching. It builds mental & physical stamina with science-backed guidance while staying lightweight for everyday users.
+A React Native (Expo) app that proposes the best workout for your time window and focus (Mental / Physical / Both), grounded in MET intensity and enhanced by AI coaching + Coach Q&A. It builds mental & physical stamina with science-backed guidance while staying lightweight for everyday users.
 
 ---
 
@@ -30,6 +30,34 @@ A React Native (Expo) app that proposes the best workout for your time window an
 - Training Monotony (7d) & Strain (7d) indicators (MET-based) to prevent overload
 - Daily Coach Note history (14 days)
 
+### 🧑‍🏫 Coach Tab (AI Preview + Guidance)
+
+A dedicated guidance-only screen:
+
+- Plan summary bar (title / total minutes / block count) + Edit in Suggestion
+
+- Coach Says: AI rewrite of today’s plan with:
+
+        -cache:hit / cache:miss indicator
+
+        -Refresh button (uses caching + daily budget guard)
+
+- Coach Q&A: quick presets + free input chat
+
+        -Preset chips: Why this plan? / 20-minute version / Indoor only / Be gentle on joints / Increase intensity
+
+        -Coach can propose “actions” you can Apply in Suggestion
+
+### 🤖 AI Coaching (What AI actually does)
+
+- Plan rewrite (“Coach Says”) via OpenAI (with cache + daily budget guard)
+
+- Daily Coach Note polish via OpenAI (cached by date; safe fallback when offline)
+
+- Coach Q&A via OpenAI (answers + optional structured actions)
+
+- Offline / missing keys → fallback to safe heuristic text (no crash)
+
 ### 🗣️ Audio & Interaction
 
 - Neural TTS (AWS Polly via Lambda Function URL) with cache; device TTS fallback
@@ -45,7 +73,7 @@ A React Native (Expo) app that proposes the best workout for your time window an
 - **Navigation:** Expo Router (tab architecture)
 - **Database:** Supabase (PostgreSQL, RLS)
 - **Auth:** Supabase Auth (email/password)
-- **AI Text:** OpenAI (suggestions & summaries) with strict caching
+- **AI Text:** OpenAI (Coach Says, Coach Q&A, Daily Coach Note)
 - **Audio:** Audio: Expo AV, AWS Polly TTS (Lambda URL) + device fallback
 - **Animations:** React Native Reanimated
 - **Icons:** lucide-react-native
@@ -61,7 +89,8 @@ A React Native (Expo) app that proposes the best workout for your time window an
 - npm or yarn
 - Expo CLI
 - Supabase project (URL + anon key)
-- OpenAI & ElevenLabs API keys
+- OpenAI API key (for AI features)
+- Optional: AWS Polly Function URL
 
 ### Installation
 
@@ -77,8 +106,10 @@ A React Native (Expo) app that proposes the best workout for your time window an
    ```ini
    EXPO_PUBLIC_SUPABASE_URL=your_supabase_url
    EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-   OPENAI_API_KEY=your_openai_key
-   ELEVENLABS_API_KEY=your_elevenlabs_key
+
+   EXPO_PUBLIC_OPENAI_API_KEY=your_openai_key
+
+   EXPO_PUBLIC_POLLY_URL=your_aws_polly_lambda_function_url
    ```
 
 3. **Start development**
@@ -110,30 +141,76 @@ All with Row Level Security (RLS).
 
 ### Navigation
 
-```
+```txt
+
 app/
 ├─ _layout.tsx
+├─ index.tsx                # Redirect / entry
+├─ player/
+│  └─ index.tsx             # Workout player (timer + audio + controls)
+├─ progress/
+│  └─ history.tsx           # Session history
 └─ (tabs)/
    ├─ _layout.tsx
-   ├─ index.tsx       # Home (plan & suggestion)
-   ├─ progress.tsx    # Charts, streaks, monotony/strain
-   ├─ stamina.tsx     # Mental/Physical levels & badges
-   └─ profile.tsx     # Settings & consent
+   ├─ suggestion.tsx        # Today's plan + Coach Note + actions entry
+   ├─ choose.tsx            # Goal / focus selection flow
+   ├─ stamina.tsx           # Mental/Physical levels & badges
+   ├─ player.tsx            # Player tab entry (if present)
+   ├─ progress.tsx          # Charts, streaks, monotony/strain
+   ├─ profile.tsx           # Settings & consent
+   ├─ coach.tsx             # Coach: AI plan preview + Coach Q&A + Apply in Suggestion
+   ├─ settings.tsx          # App settings
+   └─ coach-debug.tsx       # Hidden debug screen (dev only)
 ```
 
 ### Components (excerpt)
 
-```
+```txt
+
 components/
-├─ SuggestionCard.tsx      # Plan + “Why this?”
-├─ EditPlanSheet.tsx       # Adjust plan
-├─ TwoChoicePrompt.tsx     # Quick adjust (harder/easier)
-├─ HealingMusicPicker.tsx  # Background music
-├─ PTTButton.tsx           # Push-to-Talk
-└─ WorkoutTimer.tsx        # Timer + audio engine
+├─ SuggestionCard.tsx           # Plan + “Why this?”
+├─ EditPlanSheet.tsx            # Adjust plan
+├─ TwoChoicePrompt.tsx          # Quick adjust (harder/easier)
+├─ CoachSays.tsx                # AI rewrite + cache badge + refresh
+├─ CoachQACard.tsx              # Presets + free input + apply actions
+├─ HealingMusicPicker.tsx       # Background music (multi-select)
+├─ PTTButton.tsx                # Push-to-Talk micro-commands
+├─ WorkoutTimer.tsx             # Timer + audio engine
+└─ MiniPlayerControls.tsx       # Collapsible controls (if enabled)
+
+
 ```
 
----
+### AI / Coach Flow
+
+```txt
+ai/
+├─ suggestion.ts                # "Coach Says" rewrite (cached)
+├─ coachQA.ts                   # Coach Q&A (answers + optional actions)
+└─ dailySummary.ts              # Daily Coach Note polish (cached by date)
+
+
+```
+
+### State / Cross-screen Actions
+
+```txt
+astate/
+└─ coachActions.ts              # One-shot bridge: Coach → Suggestion (apply actions)
+
+
+```
+
+### Workout Matching Logic
+
+```txt
+logic/
+└─ rankExercises.ts             # Ranking: MET × monotony/strain × variety/progression
+data/
+└─ exerciseStyles.ts            # Style tags (e.g., indoor-only, gentle-joints)
+
+
+```
 
 ## Data Flow
 
